@@ -1,0 +1,90 @@
+version: '3.8'
+
+services:
+  # メイン開発環境
+  crowdworks-search:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: development  # 開発用ステージを使用
+    container_name: crowdworks-search-dev
+    volumes:
+      # ソースコードのマウント（リアルタイム開発用）
+      - .:/workspace
+      - /workspace/node_modules  # node_modulesは除外
+      - /workspace/dist          # distは除外
+      # AWS認証情報のマウント（必要に応じて）
+      - ~/.aws:/root/.aws:ro
+    environment:
+      # 開発環境用の環境変数
+      - NODE_ENV=development
+      - AWS_REGION=ap-northeast-1
+      - LOG_LEVEL=debug
+      # Playwright設定
+      - PLAYWRIGHT_BROWSERS_PATH=/ms-playwright
+    ports:
+      - "3000:3000"  # 将来的なAPI Gateway Local用
+      - "9229:9229"  # Node.js デバッグポート
+    working_dir: /workspace
+    # 開発用のコマンドオーバーライド
+    command: tail -f /dev/null  # コンテナを起動状態で維持
+    stdin_open: true
+    tty: true
+
+  # テスト実行専用コンテナ
+  test:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: development
+    container_name: crowdworks-search-test
+    volumes:
+      - .:/workspace
+      - /workspace/node_modules
+      - /workspace/dist
+    environment:
+      - NODE_ENV=test
+      - AWS_REGION=ap-northeast-1
+    working_dir: /workspace
+    command: npm run test:coverage
+    profiles:
+      - test  # docker-compose --profile test up で実行
+
+  # AWS CDK専用コンテナ
+  cdk:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: development
+    container_name: crowdworks-search-cdk
+    volumes:
+      - .:/workspace
+      - /workspace/node_modules
+      - /workspace/cdk.out
+      - ~/.aws:/root/.aws:ro
+    environment:
+      - AWS_REGION=ap-northeast-1
+      - CDK_DEFAULT_REGION=ap-northeast-1
+    working_dir: /workspace
+    command: tail -f /dev/null
+    profiles:
+      - cdk  # docker-compose --profile cdk up で実行
+
+  # 本番環境テスト用（Lambda環境シミュレーション）
+  lambda-test:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: production
+    container_name: crowdworks-search-lambda
+    environment:
+      - AWS_LAMBDA_RUNTIME_API=localhost:9000
+      - _HANDLER=dist/lambda/handler.lambdaHandler
+    ports:
+      - "9000:8080"  # Lambda Runtime Interface Emulator
+    profiles:
+      - lambda  # docker-compose --profile lambda up で実行
+
+networks:
+  default:
+    name: crowdworks-search-network 

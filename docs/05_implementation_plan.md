@@ -2,6 +2,51 @@
 
 ## 1. 開発フェーズ
 
+### Phase 0: CI/CD環境構築（1週間）
+
+**目標**: 安定した開発・テスト・デプロイ環境の構築
+
+**成果物**
+- GitHub Actions ワークフロー設定
+- TypeScript プロジェクト初期化
+- テスト環境設定（Jest + 型定義）
+- Linting・コードフォーマット設定
+- AWS CDK プロジェクト構造
+- 環境別設定管理
+
+**主要タスク**
+```typescript
+interface Phase0Tasks {
+  projectSetup: {
+    packageJson: 'TypeScript strict mode, ESLint, Prettier';
+    tsconfigJson: '厳密な型チェック設定';
+    jestConfig: '単体テスト環境';
+    eslintConfig: 'any型禁止ルール';
+  };
+  
+  cicdPipeline: {
+    workflow: '.github/workflows/ci.yml';
+    testStage: 'lint, type-check, unit-test';
+    buildStage: 'TypeScript compile, CDK synth';
+    deployStages: 'staging, production (manual approval)';
+  };
+  
+  awsInfrastructure: {
+    cdkInit: 'TypeScript CDK プロジェクト';
+    stackStructure: '環境別スタック分離';
+    secretsManagement: 'GitHub Secrets 設計';
+  };
+}
+```
+
+**完了基準**
+- [ ] TypeScript strict mode でコンパイル成功
+- [ ] ESLint で any 型使用をエラー検出
+- [ ] Jest テストが実行可能
+- [ ] GitHub Actions でCI/CDパイプライン動作
+- [ ] CDK synth が成功
+- [ ] 環境別デプロイが可能
+
 ### Phase 1: AWS基盤構築・環境セットアップ（1-2週間）
 
 **目標**: AWS サーバレス基盤の構築とローカル開発環境の整備
