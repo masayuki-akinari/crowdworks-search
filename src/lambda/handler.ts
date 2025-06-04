@@ -409,10 +409,11 @@ async function testPlaywrightBasic(): Promise<{
         '--disable-features=TranslateUI',
         '--disable-ipc-flooding-protection',
       ],
-      // Lambda環境でのChromium実行パス
-      executablePath: process.env['PLAYWRIGHT_BROWSERS_PATH']
-        ? `${process.env['PLAYWRIGHT_BROWSERS_PATH']}/chromium`
-        : '/usr/bin/chromium',
+      ...(process.env['AWS_LAMBDA_FUNCTION_NAME'] ? {
+        executablePath: process.env['PLAYWRIGHT_BROWSERS_PATH']
+          ? `${process.env['PLAYWRIGHT_BROWSERS_PATH']}/chromium`
+          : '/usr/bin/chromium'
+      } : {}),
     });
 
     console.log('✅ Chromium起動成功');
@@ -749,7 +750,7 @@ async function scrapeCrowdWorksJobs(page: Page, maxJobs: number = 10): Promise<S
 /**
  * CrowdWorks案件取得テスト（Playwright統合版）
  */
-async function testCrowdWorksScraping(): Promise<{
+export async function testCrowdWorksScraping(): Promise<{
   success: boolean;
   scrapingResult?: ScrapingResult;
   error?: string;
@@ -778,9 +779,11 @@ async function testCrowdWorksScraping(): Promise<{
         '--disable-features=TranslateUI',
         '--disable-ipc-flooding-protection',
       ],
-      executablePath: process.env['PLAYWRIGHT_BROWSERS_PATH']
-        ? `${process.env['PLAYWRIGHT_BROWSERS_PATH']}/chromium`
-        : '/usr/bin/chromium',
+      ...(process.env['AWS_LAMBDA_FUNCTION_NAME'] ? {
+        executablePath: process.env['PLAYWRIGHT_BROWSERS_PATH']
+          ? `${process.env['PLAYWRIGHT_BROWSERS_PATH']}/chromium`
+          : '/usr/bin/chromium'
+      } : {}),
     });
 
     console.log('✅ Chromium起動成功');
@@ -835,7 +838,7 @@ async function testCrowdWorksScraping(): Promise<{
 /**
  * CrowdWorksログインテスト実行
  */
-async function testCrowdWorksLogin(): Promise<{
+export async function testCrowdWorksLogin(): Promise<{
   success: boolean;
   loginResult?: LoginResult;
   error?: string;
@@ -867,9 +870,11 @@ async function testCrowdWorksLogin(): Promise<{
         '--disable-features=TranslateUI',
         '--disable-ipc-flooding-protection',
       ],
-      executablePath: process.env['PLAYWRIGHT_BROWSERS_PATH']
-        ? `${process.env['PLAYWRIGHT_BROWSERS_PATH']}/chromium`
-        : '/usr/bin/chromium',
+      ...(process.env['AWS_LAMBDA_FUNCTION_NAME'] ? {
+        executablePath: process.env['PLAYWRIGHT_BROWSERS_PATH']
+          ? `${process.env['PLAYWRIGHT_BROWSERS_PATH']}/chromium`
+          : '/usr/bin/chromium'
+      } : {}),
     });
 
     const context = await browser.newContext({
@@ -1284,7 +1289,7 @@ async function scrapeCrowdWorksJobsByCategory(
 /**
  * 指定カテゴリのCrowdWorks案件スクレイピングテスト
  */
-async function testCrowdWorksCategories(): Promise<{
+export async function testCrowdWorksCategories(): Promise<{
   success: boolean;
   results?: { [category: string]: ScrapingResult };
   error?: string;
@@ -1316,9 +1321,11 @@ async function testCrowdWorksCategories(): Promise<{
         '--disable-features=TranslateUI',
         '--disable-ipc-flooding-protection',
       ],
-      executablePath: process.env['PLAYWRIGHT_BROWSERS_PATH']
-        ? `${process.env['PLAYWRIGHT_BROWSERS_PATH']}/chromium`
-        : '/usr/bin/chromium',
+      ...(process.env['AWS_LAMBDA_FUNCTION_NAME'] ? {
+        executablePath: process.env['PLAYWRIGHT_BROWSERS_PATH']
+          ? `${process.env['PLAYWRIGHT_BROWSERS_PATH']}/chromium`
+          : '/usr/bin/chromium'
+      } : {}),
     });
 
     const context = await browser.newContext({
@@ -1415,216 +1422,202 @@ async function testCrowdWorksCategories(): Promise<{
 }
 
 /**
- * 案件詳細情報を取得する
+ * 案件詳細情報を抽出
  */
-async function scrapeCrowdWorksJobDetail(page: Page, jobUrl: string): Promise<CrowdWorksJobDetail | null> {
-  try {
-    console.log(`📄 案件詳細取得開始: ${jobUrl}`);
+export async function scrapeCrowdWorksJobDetail(page: Page, jobUrl: string): Promise<CrowdWorksJobDetail> {
+  console.log(`📄 案件詳細ページにアクセス: ${jobUrl}`);
 
-    // 案件詳細ページに移動
-    await page.goto(jobUrl, { waitUntil: 'networkidle' });
-    await page.waitForTimeout(2000);
+  await page.goto(jobUrl, {
+    waitUntil: 'domcontentloaded',
+    timeout: 60000
+  });
 
-    // 案件詳細情報を抽出
-    const jobDetail = await page.evaluate((url: string) => {
-      // URLから案件IDを抽出
-      const jobIdMatch = url.match(/\/public\/jobs\/(\d+)/);
-      const jobId = jobIdMatch ? jobIdMatch[1] : '';
+  await page.waitForTimeout(2000);
 
-      // タイトル取得
-      const titleElement = (globalThis as any).document.querySelector('h1');
-      const fullTitle = titleElement?.textContent?.trim() || '';
-      const title = fullTitle.replace(/\s+(ウェブデザイン|アンケート|その他).*の仕事の依頼.*$/, '').trim();
+  const detail = await page.evaluate(() => {
+    const doc = (globalThis as any).document;
 
-      // カテゴリ取得
-      const categoryElement = (globalThis as any).document.querySelector('h1 a');
-      const category = categoryElement?.textContent?.trim() || '';
+    // タイトル取得（h1から正確に抽出）
+    const titleElement = doc.querySelector('h1');
+    const fullTitle = titleElement?.textContent?.trim() || '';
+    // 案件タイトルから不要な部分を削除（より正確に）
+    const title = fullTitle.replace(/\s+(ウェブデザイン|アンケート|その他).*の仕事の依頼.*$/, '').trim();
 
-      // 仕事の概要テーブルから情報抽出
-      const overviewRows = (globalThis as any).document.querySelectorAll('table tr');
-      let paymentType = '';
-      let budget = '';
-      let deliveryDate = '';
-      let postDate = '';
-      let applicationDeadline = '';
-      let desiredImages: string[] = [];
+    // 案件IDをURLから抽出
+    const jobId = (globalThis as any).window.location.pathname.match(/\/(\d+)$/)?.[1] || '';
 
-      overviewRows.forEach((row: any) => {
+    // カテゴリを取得（パンくずから）
+    const categoryElement = doc.querySelector('a[href*="/public/jobs/category/"]');
+    const category = categoryElement?.textContent?.trim() || '';
+
+    // 仕事の概要テーブルから情報抽出（MCP構造に基づく正確な取得）
+    let paymentType = '';
+    let budget = '';
+    let deliveryDate = '';
+    let postDate = '';
+    let applicationDeadline = '';
+
+    // MCPで確認した構造: 固定報酬制の行を探す
+    const paymentRow = doc.querySelector('tr[class*="row"], table tr:has(td:contains("固定報酬制"))');
+    if (paymentRow) {
+      const cells = paymentRow.querySelectorAll('td');
+      if (cells.length >= 2) {
+        paymentType = cells[0]?.textContent?.trim() || '';
+        budget = cells[1]?.textContent?.trim() || '';
+      }
+    }
+
+    // テキストベースでのフォールバック抽出
+    const pageText = doc.body?.textContent || '';
+
+    // 固定報酬制の予算を抽出
+    const budgetMatch = pageText.match(/固定報酬制\s*([0-9,]+円\s*〜\s*[0-9,]+円)/);
+    if (budgetMatch) {
+      paymentType = '固定報酬制';
+      budget = budgetMatch[1];
+    }
+
+    // 掲載日を抽出
+    const postDateMatch = pageText.match(/掲載日\s*(\d{4}年\d{2}月\d{2}日)/);
+    if (postDateMatch) {
+      postDate = postDateMatch[1];
+    }
+
+    // 応募期限を抽出
+    const deadlineMatch = pageText.match(/応募期限\s*(\d{4}年\d{2}月\d{2}日)/);
+    if (deadlineMatch) {
+      applicationDeadline = deadlineMatch[1];
+    }
+
+    // 納品希望日を抽出
+    const deliveryMatch = pageText.match(/納品希望日\s*([^\s]+)/);
+    if (deliveryMatch && deliveryMatch[1] !== '-') {
+      deliveryDate = deliveryMatch[1];
+    }
+
+    // 応募状況テーブルから情報抽出（テキストベース）
+    let applicantCount = 0;
+    let contractCount = 0;
+    let recruitmentCount = 0;
+    let favoriteCount = 0;
+
+    const applicantMatch = pageText.match(/応募した人\s*(\d+)\s*人/);
+    if (applicantMatch) applicantCount = parseInt(applicantMatch[1]);
+
+    const contractMatch = pageText.match(/契約した人\s*(\d+)\s*人/);
+    if (contractMatch) contractCount = parseInt(contractMatch[1]);
+
+    const recruitmentMatch = pageText.match(/募集人数\s*(\d+)\s*人/);
+    if (recruitmentMatch) recruitmentCount = parseInt(recruitmentMatch[1]);
+
+    const favoriteMatch = pageText.match(/気になる！リスト\s*(\d+)\s*人/);
+    if (favoriteMatch) favoriteCount = parseInt(favoriteMatch[1]);
+
+    // クライアント情報を抽出（新構造対応）
+    const clientLinkElement = doc.querySelector('a[href*="/public/employers/"]');
+    const clientName = clientLinkElement?.textContent?.trim() || '匿名';
+
+    // 評価情報を抽出（テキストベース）
+    let overallRating = '';
+    let orderHistory = '';
+    let completionRate = '';
+
+    const ratingMatch = pageText.match(/総合評価\s*"?(\d+\.\d+)"?/);
+    if (ratingMatch) overallRating = ratingMatch[1];
+
+    const historyMatch = pageText.match(/募集実績\s*"?(\d+)"?\s*件/);
+    if (historyMatch) orderHistory = historyMatch[1] + '件';
+
+    const completionMatch = pageText.match(/プロジェクト完了率\s*"?(\d+)"?\s*%/);
+    if (completionMatch) completionRate = completionMatch[1] + '%';
+
+    // 本人確認、発注ルールチェックの状態
+    let identityVerified = false;
+    if (pageText.includes('本人確認済み') || !pageText.includes('本人確認未提出')) {
+      identityVerified = true;
+    }
+
+    // 詳細説明を取得（長いテキストセルから）
+    let detailedDescription = '';
+    const allCells = doc.querySelectorAll('td');
+    allCells.forEach((cell: any) => {
+      const text = cell.textContent?.trim() || '';
+      // 詳細説明と思われる長いテキストを取得
+      if (text.length > 200 && text.includes('概要') && !detailedDescription) {
+        detailedDescription = text;
+      }
+    });
+
+    // 最近の応募者情報を取得
+    const recentApplicants: Array<{
+      name: string;
+      applicationDate: string;
+    }> = [];
+
+    // 最後のテーブルから応募者情報を取得
+    const tables = doc.querySelectorAll('table');
+    const lastTable = tables[tables.length - 1];
+    if (lastTable) {
+      const applicantRows = lastTable.querySelectorAll('tbody tr');
+      applicantRows.forEach((row: any) => {
         const cells = row.querySelectorAll('td');
         if (cells.length >= 2) {
-          const label = cells[0]?.textContent?.trim() || '';
-          const value = cells[1]?.textContent?.trim() || '';
+          const nameCell = cells[0];
+          const dateCell = cells[1];
 
-          if (label.includes('固定報酬制') || label.includes('時間単価制')) {
-            paymentType = label;
-            budget = value;
-          } else if (label.includes('納品希望日')) {
-            deliveryDate = value;
-          } else if (label.includes('掲載日')) {
-            postDate = value;
-          } else if (label.includes('応募期限')) {
-            applicationDeadline = value;
-          } else if (label.includes('希望イメージ')) {
-            // 希望イメージの各項目を抽出
-            const imageElements = cells[1].querySelectorAll('*');
-            imageElements.forEach((el: any) => {
-              const text = el?.textContent?.trim();
-              if (text && text.length > 0 && text.length < 10) {
-                desiredImages.push(text);
-              }
+          const nameLink = nameCell.querySelector('a');
+          const name = nameLink?.textContent?.trim() || nameCell.textContent?.trim() || '';
+          const applicationDate = dateCell.textContent?.trim() || '';
+
+          // ヘッダー行をスキップ
+          if (name && applicationDate && !name.includes('クラウドワーカー') && applicationDate.includes('/')) {
+            recentApplicants.push({
+              name,
+              applicationDate
             });
           }
         }
       });
+    }
 
-      // 応募状況テーブルから情報抽出
-      const statusRows = (globalThis as any).document.querySelectorAll('table tr');
-      let applicantCount = 0;
-      let contractCount = 0;
-      let recruitmentCount = 0;
-      let favoriteCount = 0;
+    return {
+      jobId,
+      title: title || fullTitle, // フォールバック
+      url: (globalThis as any).window.location.href,
+      category,
+      paymentType,
+      budget,
+      postDate,
+      deliveryDate,
+      applicationDeadline,
+      desiredImages: [], // 希望イメージは現在の構造では取得困難なため空配列
+      applicantCount,
+      contractCount,
+      recruitmentCount,
+      favoriteCount,
+      client: {
+        name: clientName,
+        url: clientLinkElement?.getAttribute('href') ?
+          `https://crowdworks.jp${clientLinkElement.getAttribute('href')}` : '',
+        overallRating,
+        orderHistory,
+        completionRate,
+        thankCount: '', // ありがとう件数は現在の構造では取得困難
+        identityVerified,
+        orderRuleCheck: false, // 発注ルールチェックは現在の構造では取得困難
+        description: '', // クライアント説明は現在の構造では取得困難
+      },
+      detailedDescription,
+      recentApplicants: recentApplicants.map(applicant => ({
+        ...applicant,
+        url: '' // 応募者URLは現在の構造では取得困難
+      })),
+      scrapedAt: new Date().toISOString()
+    };
+  });
 
-      statusRows.forEach((row: any) => {
-        const cells = row.querySelectorAll('td');
-        if (cells.length >= 2) {
-          const label = cells[0]?.textContent?.trim() || '';
-          const value = cells[1]?.textContent?.trim() || '';
-          const numValue = parseInt(value.replace(/[^\d]/g, ''));
-
-          if (label.includes('応募した人')) {
-            applicantCount = numValue || 0;
-          } else if (label.includes('契約した人')) {
-            contractCount = numValue || 0;
-          } else if (label.includes('募集人数')) {
-            recruitmentCount = numValue || 0;
-          } else if (label.includes('気になる')) {
-            favoriteCount = numValue || 0;
-          }
-        }
-      });
-
-      // 詳細な仕事内容
-      const detailRows = (globalThis as any).document.querySelectorAll('table tr');
-      let detailedDescription = '';
-      detailRows.forEach((row: any) => {
-        const cell = row.querySelector('td');
-        if (cell) {
-          const text = cell?.textContent?.trim() || '';
-          if (text.length > 100) { // 長いテキストが詳細説明の可能性が高い
-            detailedDescription = text;
-          }
-        }
-      });
-
-      // クライアント情報
-      const clientNameElement = (globalThis as any).document.querySelector('a[href*="/public/employers/"]');
-      const clientName = clientNameElement?.textContent?.trim() || '匿名';
-      const clientUrl = clientNameElement?.getAttribute('href') || '';
-
-      // 評価情報
-      let overallRating = '';
-      let orderHistory = '';
-      let completionRate = '';
-      let thankCount = '';
-
-      const definitionElements = (globalThis as any).document.querySelectorAll('dd, definition');
-      definitionElements.forEach((def: any) => {
-        const text = def?.textContent?.trim() || '';
-        if (text.includes('.') && text.length < 5) {
-          overallRating = text;
-        } else if (text.includes('件') && text.length < 10) {
-          if (!orderHistory) orderHistory = text;
-        } else if (text.includes('%')) {
-          completionRate = text;
-        }
-      });
-
-      // ありがとう件数
-      const thankElements = (globalThis as any).document.querySelectorAll('*');
-      thankElements.forEach((el: any) => {
-        const text = el?.textContent?.trim() || '';
-        if (text.includes('ありがとう') && text.includes('件')) {
-          thankCount = text.match(/\d+/)?.[0] || '0';
-        }
-      });
-
-      // 本人確認・発注ルールチェック
-      const pageText = (globalThis as any).document.body?.textContent || '';
-      const identityVerified = !pageText.includes('本人確認未提出');
-      const orderRuleCheck = !pageText.includes('発注ルールチェック未回答');
-
-      // クライアント説明
-      let clientDescription = '';
-      const descriptionElements = (globalThis as any).document.querySelectorAll('p');
-      descriptionElements.forEach((p: any) => {
-        const text = p?.textContent?.trim() || '';
-        if (text.includes('主に') && text.length > 10 && text.length < 200) {
-          clientDescription = text;
-        }
-      });
-
-      // 最近の応募者情報
-      const recentApplicants: Array<{ name: string; url: string; applicationDate: string }> = [];
-      const applicantRows = (globalThis as any).document.querySelectorAll('tbody tr');
-      applicantRows.forEach((row: any) => {
-        const cells = row.querySelectorAll('td');
-        if (cells.length >= 2) {
-          const nameElement = cells[0]?.querySelector('a');
-          if (nameElement) {
-            const name = nameElement?.textContent?.trim() || '';
-            const applicantUrl = nameElement?.getAttribute('href') || '';
-            const applicationDate = cells[1]?.textContent?.trim() || '';
-
-            if (name && applicationDate.includes('/')) {
-              recentApplicants.push({
-                name,
-                url: applicantUrl.startsWith('http') ? applicantUrl : `https://crowdworks.jp${applicantUrl}`,
-                applicationDate
-              });
-            }
-          }
-        }
-      });
-
-      return {
-        jobId: jobId || '',
-        title,
-        category,
-        url,
-        paymentType,
-        budget,
-        deliveryDate,
-        postDate,
-        applicationDeadline,
-        desiredImages,
-        applicantCount,
-        contractCount,
-        recruitmentCount,
-        favoriteCount,
-        detailedDescription,
-        client: {
-          name: clientName,
-          url: clientUrl.startsWith('http') ? clientUrl : `https://crowdworks.jp${clientUrl}`,
-          overallRating,
-          orderHistory,
-          completionRate,
-          thankCount,
-          identityVerified,
-          orderRuleCheck,
-          description: clientDescription
-        },
-        recentApplicants: recentApplicants.slice(0, 10), // 最新10件
-        scrapedAt: new Date().toISOString()
-      };
-    }, jobUrl);
-
-    console.log(`✅ 案件詳細取得完了: ${jobDetail.title}`);
-    return jobDetail;
-
-  } catch (error) {
-    console.error(`❌ 案件詳細取得エラー: ${jobUrl}`, error);
-    return null;
-  }
+  console.log(`✅ 案件詳細情報を取得: ${detail.title}`);
+  return detail;
 }
 
 /**
@@ -1660,9 +1653,11 @@ export async function scrapeCrowdWorksJobsByCategoryWithDetails(params: {
         '--disable-features=TranslateUI',
         '--disable-ipc-flooding-protection',
       ],
-      executablePath: process.env['PLAYWRIGHT_BROWSERS_PATH']
-        ? `${process.env['PLAYWRIGHT_BROWSERS_PATH']}/chromium`
-        : '/usr/bin/chromium',
+      ...(process.env['AWS_LAMBDA_FUNCTION_NAME'] ? {
+        executablePath: process.env['PLAYWRIGHT_BROWSERS_PATH']
+          ? `${process.env['PLAYWRIGHT_BROWSERS_PATH']}/chromium`
+          : '/usr/bin/chromium'
+      } : {}),
     });
 
     const context = await browser.newContext({

@@ -30,12 +30,14 @@ async function main() {
             // サンプル案件情報を表示
             if (scrapingTest.scrapingResult.jobs.length > 0) {
                 const sampleJob = scrapingTest.scrapingResult.jobs[0];
-                console.log('\n📋 サンプル案件情報:');
-                console.log(`  🏷️ タイトル: ${sampleJob.title}`);
-                console.log(`  💰 予算: ${sampleJob.budget}`);
-                console.log(`  🏢 クライアント: ${sampleJob.clientName}`);
-                console.log(`  🔗 URL: ${sampleJob.url}`);
-                console.log(`  📅 掲載日: ${sampleJob.postedAt}`);
+                if (sampleJob) {
+                    console.log('\n📋 サンプル案件情報:');
+                    console.log(`  🏷️ タイトル: ${sampleJob.title}`);
+                    console.log(`  💰 予算: ${sampleJob.budget}`);
+                    console.log(`  🏢 クライアント: ${sampleJob.client.name}`);
+                    console.log(`  🔗 URL: ${sampleJob.url}`);
+                    console.log(`  📅 掲載日: ${sampleJob.postedAt}`);
+                }
             }
         } else {
             console.log('❌ スクレイピングテスト失敗:', scrapingTest.error);
