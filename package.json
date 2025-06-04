@@ -18,6 +18,8 @@
         "test:integration": "jest --testPathPattern=integration",
         "test:e2e": "jest --testPathPattern=e2e",
         "test:playwright": "playwright test",
+        "test:crowdworks:local": "ts-node src/test/crowdworks-scraping-test.ts",
+        "test:login:local": "npm run test:crowdworks:local",
         "cdk:synth": "tsc -p tsconfig.cdk.json && cdk synth",
         "cdk:deploy": "npm run build && cdk deploy --require-approval never",
         "cdk:deploy:container": "npm run build && cdk deploy --require-approval never --context useContainerImage=true",

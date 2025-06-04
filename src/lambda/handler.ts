@@ -73,10 +73,31 @@ interface ScrapingResult {
 
 /**
  * AWS Parameter Storeから認証情報を取得
+ * ローカル開発時は環境変数フォールバック対応
  */
 async function getCrowdWorksCredentials(): Promise<CrowdWorksCredentials> {
   try {
     console.log('🔐 CrowdWorks認証情報を取得中...');
+
+    // ローカル開発環境では環境変数を優先
+    const isLocal = !process.env['AWS_LAMBDA_FUNCTION_NAME'];
+
+    if (isLocal) {
+      console.log('🏠 ローカル環境を検出、環境変数から認証情報を取得...');
+
+      const envEmail = process.env['CROWDWORKS_EMAIL'];
+      const envPassword = process.env['CROWDWORKS_PASSWORD'];
+
+      if (envEmail && envPassword) {
+        console.log('✅ 環境変数から認証情報取得完了');
+        return { email: envEmail, password: envPassword };
+      }
+
+      console.log('⚠️ 環境変数が設定されていません。Parameter Storeにフォールバック...');
+    }
+
+    // Parameter Storeから取得（Lambda環境またはローカルフォールバック）
+    console.log('☁️ AWS Parameter Storeから認証情報を取得中...');
 
     const [emailParam, passwordParam] = await Promise.all([
       ssmClient.send(new GetParameterCommand({
@@ -96,11 +117,24 @@ async function getCrowdWorksCredentials(): Promise<CrowdWorksCredentials> {
       throw new Error('CrowdWorks認証情報がParameter Storeで見つかりません');
     }
 
-    console.log('✅ 認証情報取得完了');
+    console.log('✅ Parameter Storeから認証情報取得完了');
     return { email, password };
 
   } catch (error) {
     console.error('❌ 認証情報取得エラー:', error);
+
+    // エラー詳細情報を提供
+    if (error instanceof Error) {
+      if (error.message.includes('ParameterNotFound')) {
+        throw new Error('Parameter Storeにパラメータが存在しません。以下のコマンドで作成してください:\n' +
+          'aws ssm put-parameter --name "/crowdworks-search/crowdworks/email" --value "your-email" --type "SecureString"\n' +
+          'aws ssm put-parameter --name "/crowdworks-search/crowdworks/password" --value "your-password" --type "SecureString"');
+      }
+      if (error.message.includes('AccessDenied')) {
+        throw new Error('Parameter Storeへのアクセス権限がありません。IAMポリシーを確認してください。');
+      }
+    }
+
     throw new Error(`認証情報取得失敗: ${error instanceof Error ? error.message : String(error)}`);
   }
 }
