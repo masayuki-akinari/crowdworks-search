@@ -5,15 +5,15 @@ FROM public.ecr.aws/lambda/nodejs:18 as base
 USER root
 
 # 必要なシステムパッケージのインストール
-RUN dnf update -y && \
-    dnf install -y \
+RUN yum update -y && \
+    yum install -y \
     git \
     tar \
     gzip \
     unzip \
     which \
     procps \
-    && dnf clean all
+    && yum clean all
 
 # AWS CLI v2のインストール
 RUN curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip" && \

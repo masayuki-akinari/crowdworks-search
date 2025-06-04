@@ -95,6 +95,12 @@ jobs:
       - name: Build TypeScript
         run: npm run build
 
+      - name: Debug build output
+        run: |
+          echo "=== Checking build output ==="
+          ls -la dist/ || echo "dist directory not found"
+          find . -name "*.js" -type f | head -10
+          
       - name: Verify build output
         run: |
           if [ ! -d "dist" ]; then
@@ -103,6 +109,8 @@ jobs:
           fi
           if [ ! -f "dist/index.js" ]; then
             echo "Build failed: main output file not found"
+            echo "Contents of dist directory:"
+            ls -la dist/
             exit 1
           fi
           echo "✅ Build verification passed"
