@@ -193,93 +193,52 @@ async function testCrowdWorksCategoryScraping(): Promise<void> {
             });
             console.log(`📸 スクリーンショット保存: screenshot_${category}_after_sort.png`);
 
-            // 案件一覧の取得
-            console.log('📝 案件データ抽出開始...');
+            // 案件データ抽出を実行
+            console.log('📝 実際の案件データ抽出テスト...');
 
-            try {
-                // 案件一覧要素の確認
-                const jobCount = await page.evaluate(() => {
-                    // より多くのセレクターパターンを試行
-                    const selectors = [
-                        '.search_result .project_row',
-                        '.project-item',
-                        '[class*="project-row"]',
-                        '.job-item',
-                        '.list-item',
-                        '[data-id]',
-                        '.job-list .job',
-                        '.project-list .project',
-                        '.search-result-item',
-                        '.job-card',
-                        'article',
-                        '[class*="job"]',
-                        '[class*="project"]'
-                    ];
+            // 修正されたセレクターで案件要素を検索
+            const finalJobCount = await page.evaluate(() => {
+                const selectors = [
+                    'main li',  // メイン要素内のli要素（最も可能性が高い）
+                    'ul li',    // 一般的なリスト構造
+                    'ol li',    // 順序付きリスト
+                    '.job-list li',
+                    'li',       // 全てのli要素
+                    '.job-item',
+                    '[data-job-id]'
+                ];
 
-                    let foundElements: any = null;
-                    let usedSelector = '';
+                let foundJobElements: any = null;
+                let usedSelector = '';
 
-                    for (const selector of selectors) {
-                        const elements = (globalThis as any).document.querySelectorAll(selector);
-                        if (elements.length > 0) {
-                            foundElements = elements;
-                            usedSelector = selector;
-                            console.log(`✅ 案件要素発見: ${selector} (${elements.length}件)`);
-                            break;
-                        }
-                    }
+                for (const selector of selectors) {
+                    const elements = (globalThis as any).document.querySelectorAll(selector);
 
-                    if (!foundElements) {
-                        // 全体的なDOM構造をデバッグ出力
-                        const bodyClasses = (globalThis as any).document.body.className;
-                        const mainContent = (globalThis as any).document.querySelector('main, #main, .main, .content, .container');
-                        const allDivs = (globalThis as any).document.querySelectorAll('div[class*="search"], div[class*="result"], div[class*="job"], div[class*="project"]');
-
-                        console.log(`🔍 デバッグ情報:`);
-                        console.log(`   Body classes: ${bodyClasses}`);
-                        console.log(`   Main content: ${mainContent ? 'found' : 'not found'}`);
-                        console.log(`   Related divs: ${allDivs.length}件`);
-
-                        return 0;
-                    }
-
-                    return foundElements.length;
-                });
-
-                console.log(`🔢 発見した案件数: ${jobCount}件`);
-
-                if (jobCount > 0) {
-                    // サンプル案件情報を取得（最初の3件）
-                    const sampleJobs = await page.evaluate(() => {
-                        const jobElements = (globalThis as any).document.querySelectorAll('.search_result .project_row, .project-item, [class*="project-row"]');
-                        const samples: any[] = [];
-
-                        for (let i = 0; i < Math.min(jobElements.length, 3); i++) {
-                            const jobElement = jobElements[i];
-                            const titleElement = jobElement.querySelector('.project_title a, .job-title a, a[class*="title"], h3 a, h2 a');
-                            const title = titleElement?.textContent?.trim() || `案件${i + 1}`;
-
-                            const dateElement = jobElement.querySelector('.posted_date, .date, .post-date');
-                            const postedAt = dateElement?.textContent?.trim() || '投稿日不明';
-
-                            samples.push({ title, postedAt });
-                        }
-
-                        return samples;
+                    // 案件リンクを含むli要素のみフィルタリング
+                    const jobElements = Array.from(elements).filter((el: any) => {
+                        return el.querySelector('a[href*="/public/jobs/"]');
                     });
 
-                    console.log('📝 サンプル案件（新着順）:');
-                    sampleJobs.forEach((job, index) => {
-                        console.log(`   ${index + 1}. ${job.title} (投稿: ${job.postedAt})`);
-                    });
-
-                } else {
-                    console.log('⚠️ 案件が見つかりませんでした');
+                    if (jobElements.length > 0) {
+                        foundJobElements = jobElements;
+                        usedSelector = selector;
+                        console.log(`✅ 案件要素発見: ${selector} (フィルタ後${jobElements.length}件)`);
+                        break;
+                    }
                 }
 
-            } catch (extractError) {
-                console.error('❌ 案件データ抽出エラー:', extractError);
-            }
+                if (!foundJobElements) {
+                    console.log('❌ 案件要素が見つかりませんでした');
+                    return 0;
+                }
+
+                console.log(`📊 使用セレクター: ${usedSelector}`);
+                console.log(`📝 案件数: ${foundJobElements.length}件`);
+
+                return foundJobElements.length;
+            });
+
+            console.log(`🔢 最終案件数: ${finalJobCount}件`);
 
             // 次のカテゴリ処理前に少し待機
             console.log(`✅ カテゴリ「${category}」処理完了\n`);

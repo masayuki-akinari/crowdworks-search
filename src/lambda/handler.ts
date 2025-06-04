@@ -476,163 +476,189 @@ async function scrapeCrowdWorksJobs(page: Page, maxJobs: number = 10): Promise<S
     // 案件要素を取得
     console.log('📝 案件データ抽出中...');
     const jobs: CrowdWorksJob[] = await page.evaluate((params: { maxJobsLimit: number; categoryName: string; scrapedIds: string[] }) => {
-      // 実際のDOM構造に基づく案件要素セレクター
+      // PlaywrightでのHTML要素に対応したセレクター
       const jobSelectors = [
-        'list listitem',  // MCPブラウザで確認した実際の構造
-        '.search_result .project_row',
-        '.project-item',
-        '.job-item',
-        '[class*="project-row"]',
-        '.list-item'
+        'main li',             // main要素内のli要素（最も可能性が高い）
+        'ul li',               // 一般的なリスト構造
+        'ol li',               // 順序付きリスト
+        '.job-list li',        // 案件リスト内のli
+        'li',                  // 全てのli要素
+        '.job-item',           // 案件アイテム用クラス
+        '[data-job-id]'        // job-id属性を持つ要素
       ];
 
       let jobElements: any = null;
+      let usedSelector = '';
+
       for (const selector of jobSelectors) {
         const elements = (globalThis as any).document.querySelectorAll(selector);
         if (elements.length > 0) {
           jobElements = elements;
-          console.log(`案件要素発見: ${selector} (${elements.length}件)`);
+          usedSelector = selector;
+          console.log(`✅ 案件要素発見: ${selector} (${elements.length}件)`);
           break;
         }
       }
 
-      if (!jobElements) {
-        console.log('案件要素が見つかりません');
+      if (!jobElements || jobElements.length === 0) {
+        console.log('❌ 案件要素が見つかりません');
+        // デバッグ: ページの主要な要素を確認
+        const mainElements = (globalThis as any).document.querySelectorAll('main, .main, #main');
+        console.log('🔍 デバッグ: main要素数:', mainElements.length);
+
+        // 実際にある要素を調査
+        const allLists = (globalThis as any).document.querySelectorAll('ul, ol');
+        console.log('🔍 デバッグ: リスト要素数:', allLists.length);
+
+        const allListItems = (globalThis as any).document.querySelectorAll('li');
+        console.log('🔍 デバッグ: リストアイテム要素数:', allListItems.length);
+
+        // 全ての見出し要素を確認
+        const allHeadings = (globalThis as any).document.querySelectorAll('h1, h2, h3, h4, h5, h6');
+        console.log('🔍 デバッグ: 見出し要素数:', allHeadings.length);
+
+        // 全てのリンク要素を確認
+        const allLinks = (globalThis as any).document.querySelectorAll('a');
+        console.log('🔍 デバッグ: リンク要素数:', allLinks.length);
+
+        // 案件URLを含むリンクを確認
+        const jobLinks = (globalThis as any).document.querySelectorAll('a[href*="/public/jobs/"]');
+        console.log('🔍 デバッグ: 案件リンク数:', jobLinks.length);
+
         return [];
       }
 
-      const extractedJobs: any[] = [];
-      const scrapedIdsSet = new Set(params.scrapedIds);
-      console.log(`🔢 発見した案件数: ${jobElements.length}`);
+      const jobs: any[] = [];
+      console.log(`📊 ${jobElements.length}件の案件要素を処理中...`);
 
       for (let i = 0; i < Math.min(jobElements.length, params.maxJobsLimit); i++) {
-        const jobElement = jobElements[i] as any;
-
         try {
-          // 実際のDOM構造に基づく案件タイトルとURL抽出
-          // MCPで確認: heading[level=3] > link の構造
-          const titleElement = jobElement.querySelector('heading[level="3"] link, h3 a, .project_title a, .job-title a, a[class*="title"]');
+          const jobElement = jobElements[i];
+
+          // 実際のHTML要素でタイトルとURLを検索
+          const titleElement = jobElement.querySelector('h3 a, h2 a, h4 a, .title a, a[href*="/public/jobs/"], a[href*="/jobs/"]');
           const title = titleElement?.textContent?.trim() || titleElement?.innerText?.trim() || `案件タイトル不明_${i}`;
 
-          // href属性またはurl属性から案件URLを取得
-          const href = titleElement?.getAttribute('href') || titleElement?.getAttribute('url') || '';
+          // href属性から案件URLを取得
+          const href = titleElement?.getAttribute('href') || '';
           const url = href ? (href.startsWith('http') ? href : `https://crowdworks.jp${href}`) : '';
 
-          // 案件ID（URLから抽出）
-          const idMatch = url.match(/\/public\/jobs\/(\d+)/);
-          const id = idMatch && idMatch[1] ? idMatch[1] : `${params.categoryName}_${i}_${Date.now()}`;
+          // 案件IDをURLから抽出
+          const jobIdMatch = url.match(/\/public\/jobs\/(\d+)/);
+          const jobId = jobIdMatch ? jobIdMatch[1] : `unknown_${i}`;
 
           // 重複チェック
-          if (scrapedIdsSet.has(id)) {
-            console.log(`⏭️ スキップ（既存）: ${id} - ${title}`);
+          if (params.scrapedIds.includes(jobId)) {
+            console.log(`⏭️ スキップ: 重複案件 ${jobId}`);
             continue;
           }
 
-          // 予算情報 - 実際のDOM構造に基づく
-          // MCPで確認: 固定報酬制、時間単価制の表示
-          const budgetElements = jobElement.querySelectorAll('generic');
+          // 概要 - 実際のHTML要素から取得
+          const descriptionElement = jobElement.querySelector('p, div, span');
+          let description = '';
+          if (descriptionElement) {
+            description = descriptionElement.textContent?.trim() || descriptionElement.innerText?.trim() || '';
+          }
+
+          // 料金情報 - 全てのテキスト要素から検索
+          const allElements = jobElement.querySelectorAll('*');
           let budgetText = '';
 
-          for (const budgetEl of budgetElements) {
-            const text = budgetEl?.textContent?.trim() || '';
+          for (const element of allElements) {
+            const text = element?.textContent?.trim() || '';
             if (text.includes('円') || text.includes('固定報酬制') || text.includes('時間単価制') || text.includes('コンペ')) {
               budgetText = text;
               break;
             }
           }
 
-          let budget = {
-            type: 'unknown' as 'fixed' | 'hourly' | 'unknown',
-            amount: 0,
-            currency: 'JPY'
-          };
-
-          if (budgetText.includes('時間単価制') || budgetText.includes('時給')) {
-            budget.type = 'hourly';
-            const hourlyMatch = budgetText.match(/([\d,]+)/);
-            budget.amount = hourlyMatch ? parseInt(hourlyMatch[0].replace(/,/g, '')) : 0;
-          } else if (budgetText.includes('固定報酬制') || budgetText.includes('円')) {
-            budget.type = 'fixed';
-            const fixedMatch = budgetText.match(/([\d,]+)/);
-            budget.amount = fixedMatch ? parseInt(fixedMatch[0].replace(/,/g, '')) : 0;
+          // カテゴリ - リンク要素から取得
+          const categoryLinks = jobElement.querySelectorAll('a');
+          let category = params.categoryName;
+          for (const link of categoryLinks) {
+            const linkText = link?.textContent?.trim() || '';
+            const href = link?.getAttribute('href') || '';
+            if (href.includes('/public/jobs/category/') && linkText && linkText.length < 30) {
+              category = linkText;
+              break;
+            }
           }
 
-          // タグ（スキル） - listで管理されている場合
-          const skillList = jobElement.querySelector('list');
+          // スキル/タグ - リンク要素から抽出
+          const skillLinks = jobElement.querySelectorAll('a');
           const tags: string[] = [];
-          if (skillList) {
-            const skillItems = skillList.querySelectorAll('listitem link');
-            skillItems.forEach((skillItem: any) => {
-              const skillText = skillItem?.textContent?.trim();
-              if (skillText) tags.push(skillText);
-            });
-          }
+          skillLinks.forEach((skillItem: any) => {
+            const skillText = skillItem?.textContent?.trim();
+            const href = skillItem?.getAttribute('href') || '';
+            if (skillText && href.includes('/skill/') && skillText.length > 0 && skillText.length < 50) {
+              tags.push(skillText);
+            }
+          });
 
-          // クライアント情報 - link要素から取得
-          const clientLinks = jobElement.querySelectorAll('link');
+          // クライアント情報 - リンク要素から取得
+          const clientLinks = jobElement.querySelectorAll('a');
           let clientName = '匿名';
           for (const link of clientLinks) {
             const linkText = link?.textContent?.trim() || '';
-            if (linkText && !linkText.includes('この仕事に似た') && !linkText.includes('http') && linkText.length < 50) {
+            const href = link?.getAttribute('href') || '';
+            // クライアントページへのリンクを探す
+            if (linkText && href.includes('/public/employers/') && !href.includes('/public/jobs/') && linkText.length < 50) {
               clientName = linkText;
               break;
             }
           }
 
-          // 投稿日時 - time要素から取得
+          // 掲載日時 - time要素から取得
           const timeElement = jobElement.querySelector('time');
-          const postedAt = timeElement?.textContent?.trim() || timeElement?.getAttribute('datetime') || '';
+          const postedAt = timeElement?.textContent?.trim() || timeElement?.innerText?.trim() || new Date().toISOString().split('T')[0];
 
-          // 応募者数・契約数 - genericテキストから抽出
-          let applicants = 0;
-          const genericElements = jobElement.querySelectorAll('generic');
-          for (const generic of genericElements) {
-            const text = generic?.textContent?.trim() || '';
-            if (text.includes('契約数') || text.includes('応募数')) {
-              const numberMatch = text.match(/(\d+)/);
-              if (numberMatch) {
-                applicants = parseInt(numberMatch[1]);
-                break;
-              }
+          // 応募者数と期限 - テキストから抽出
+          let applicantCount = 0;
+          let deadline = '';
+
+          allElements.forEach((element: any) => {
+            const text = element?.textContent?.trim() || '';
+
+            // 契約数を抽出
+            const contractMatch = text.match(/契約数[^\d]*(\d+)/);
+            if (contractMatch) {
+              applicantCount = parseInt(contractMatch[1]) || 0;
             }
-          }
 
-          // 概要 - paragraph要素から取得
-          const descElement = jobElement.querySelector('paragraph');
-          const description = descElement?.textContent?.trim().slice(0, 200) || '';
+            // 期限を抽出
+            const deadlineMatch = text.match(/あと(\d+)日|(\d+月\d+日)/);
+            if (deadlineMatch) {
+              deadline = text;
+            }
+          });
 
-          const jobData = {
-            id,
-            title,
-            description: description + (description.length >= 200 ? '...' : ''),
-            url,
-            budget,
-            category: params.categoryName,
-            tags,
-            client: {
-              name: clientName,
-              rating: 0, // 評価情報は複雑な構造のため一旦0
-              reviewCount: 0
-            },
-            postedAt,
-            applicants,
+          const job = {
+            id: jobId,
+            title: title,
+            url: url,
+            description: description.substring(0, 500), // 長すぎる場合は切り詰め
+            budget: budgetText,
+            category: category,
+            tags: tags.slice(0, 10), // 最大10個のタグ
+            clientName: clientName,
+            postedAt: postedAt,
+            applicantCount: applicantCount,
+            deadline: deadline,
             scrapedAt: new Date().toISOString()
           };
 
-          extractedJobs.push(jobData);
-          console.log(`✅ 案件 ${extractedJobs.length}: ${title} (ID: ${id})`);
+          jobs.push(job);
+          console.log(`✅ 案件データ抽出成功: ${job.title} (${job.id})`);
 
         } catch (error) {
-          console.error(`❌ 案件 ${i + 1} 抽出エラー:`, error);
+          console.log(`❌ 案件 ${i} の処理中にエラー:`, error);
+          continue;
         }
       }
 
-      return extractedJobs;
-    }, {
-      maxJobsLimit: maxJobs,
-      categoryName: 'all',
-      scrapedIds: Array.from(scrapedJobsCache)
-    });
+      console.log(`📊 合計 ${jobs.length} 件の案件を抽出しました (セレクター: ${usedSelector})`);
+      return jobs;
+    }, { maxJobsLimit: maxJobs, categoryName: 'all', scrapedIds: Array.from(scrapedJobsCache) });
 
     // 重複チェックのためキャッシュに追加
     jobs.forEach((job: CrowdWorksJob) => scrapedJobsCache.add(job.id));
@@ -986,163 +1012,189 @@ async function scrapeCrowdWorksJobsByCategory(
     // 案件要素を取得
     console.log('📝 案件データ抽出中...');
     const jobs: CrowdWorksJob[] = await page.evaluate((params: { maxJobsLimit: number; categoryName: string; scrapedIds: string[] }) => {
-      // 実際のDOM構造に基づく案件要素セレクター
+      // PlaywrightでのHTML要素に対応したセレクター
       const jobSelectors = [
-        'list listitem',  // MCPブラウザで確認した実際の構造
-        '.search_result .project_row',
-        '.project-item',
-        '.job-item',
-        '[class*="project-row"]',
-        '.list-item'
+        'main li',             // main要素内のli要素（最も可能性が高い）
+        'ul li',               // 一般的なリスト構造
+        'ol li',               // 順序付きリスト
+        '.job-list li',        // 案件リスト内のli
+        'li',                  // 全てのli要素
+        '.job-item',           // 案件アイテム用クラス
+        '[data-job-id]'        // job-id属性を持つ要素
       ];
 
       let jobElements: any = null;
+      let usedSelector = '';
+
       for (const selector of jobSelectors) {
         const elements = (globalThis as any).document.querySelectorAll(selector);
         if (elements.length > 0) {
           jobElements = elements;
-          console.log(`案件要素発見: ${selector} (${elements.length}件)`);
+          usedSelector = selector;
+          console.log(`✅ 案件要素発見: ${selector} (${elements.length}件)`);
           break;
         }
       }
 
-      if (!jobElements) {
-        console.log('案件要素が見つかりません');
+      if (!jobElements || jobElements.length === 0) {
+        console.log('❌ 案件要素が見つかりません');
+        // デバッグ: ページの主要な要素を確認
+        const mainElements = (globalThis as any).document.querySelectorAll('main, .main, #main');
+        console.log('🔍 デバッグ: main要素数:', mainElements.length);
+
+        // 実際にある要素を調査
+        const allLists = (globalThis as any).document.querySelectorAll('ul, ol');
+        console.log('🔍 デバッグ: リスト要素数:', allLists.length);
+
+        const allListItems = (globalThis as any).document.querySelectorAll('li');
+        console.log('🔍 デバッグ: リストアイテム要素数:', allListItems.length);
+
+        // 全ての見出し要素を確認
+        const allHeadings = (globalThis as any).document.querySelectorAll('h1, h2, h3, h4, h5, h6');
+        console.log('🔍 デバッグ: 見出し要素数:', allHeadings.length);
+
+        // 全てのリンク要素を確認
+        const allLinks = (globalThis as any).document.querySelectorAll('a');
+        console.log('🔍 デバッグ: リンク要素数:', allLinks.length);
+
+        // 案件URLを含むリンクを確認
+        const jobLinks = (globalThis as any).document.querySelectorAll('a[href*="/public/jobs/"]');
+        console.log('🔍 デバッグ: 案件リンク数:', jobLinks.length);
+
         return [];
       }
 
-      const extractedJobs: any[] = [];
-      const scrapedIdsSet = new Set(params.scrapedIds);
-      console.log(`🔢 発見した案件数: ${jobElements.length}`);
+      const jobs: any[] = [];
+      console.log(`📊 ${jobElements.length}件の案件要素を処理中...`);
 
       for (let i = 0; i < Math.min(jobElements.length, params.maxJobsLimit); i++) {
-        const jobElement = jobElements[i] as any;
-
         try {
-          // 実際のDOM構造に基づく案件タイトルとURL抽出
-          // MCPで確認: heading[level=3] > link の構造
-          const titleElement = jobElement.querySelector('heading[level="3"] link, h3 a, .project_title a, .job-title a, a[class*="title"]');
+          const jobElement = jobElements[i];
+
+          // 実際のHTML要素でタイトルとURLを検索
+          const titleElement = jobElement.querySelector('h3 a, h2 a, h4 a, .title a, a[href*="/public/jobs/"], a[href*="/jobs/"]');
           const title = titleElement?.textContent?.trim() || titleElement?.innerText?.trim() || `案件タイトル不明_${i}`;
 
-          // href属性またはurl属性から案件URLを取得
-          const href = titleElement?.getAttribute('href') || titleElement?.getAttribute('url') || '';
+          // href属性から案件URLを取得
+          const href = titleElement?.getAttribute('href') || '';
           const url = href ? (href.startsWith('http') ? href : `https://crowdworks.jp${href}`) : '';
 
-          // 案件ID（URLから抽出）
-          const idMatch = url.match(/\/public\/jobs\/(\d+)/);
-          const id = idMatch && idMatch[1] ? idMatch[1] : `${params.categoryName}_${i}_${Date.now()}`;
+          // 案件IDをURLから抽出
+          const jobIdMatch = url.match(/\/public\/jobs\/(\d+)/);
+          const jobId = jobIdMatch ? jobIdMatch[1] : `unknown_${i}`;
 
           // 重複チェック
-          if (scrapedIdsSet.has(id)) {
-            console.log(`⏭️ スキップ（既存）: ${id} - ${title}`);
+          if (params.scrapedIds.includes(jobId)) {
+            console.log(`⏭️ スキップ: 重複案件 ${jobId}`);
             continue;
           }
 
-          // 予算情報 - 実際のDOM構造に基づく
-          // MCPで確認: 固定報酬制、時間単価制の表示
-          const budgetElements = jobElement.querySelectorAll('generic');
+          // 概要 - 実際のHTML要素から取得
+          const descriptionElement = jobElement.querySelector('p, div, span');
+          let description = '';
+          if (descriptionElement) {
+            description = descriptionElement.textContent?.trim() || descriptionElement.innerText?.trim() || '';
+          }
+
+          // 料金情報 - 全てのテキスト要素から検索
+          const allElements = jobElement.querySelectorAll('*');
           let budgetText = '';
 
-          for (const budgetEl of budgetElements) {
-            const text = budgetEl?.textContent?.trim() || '';
+          for (const element of allElements) {
+            const text = element?.textContent?.trim() || '';
             if (text.includes('円') || text.includes('固定報酬制') || text.includes('時間単価制') || text.includes('コンペ')) {
               budgetText = text;
               break;
             }
           }
 
-          let budget = {
-            type: 'unknown' as 'fixed' | 'hourly' | 'unknown',
-            amount: 0,
-            currency: 'JPY'
-          };
-
-          if (budgetText.includes('時間単価制') || budgetText.includes('時給')) {
-            budget.type = 'hourly';
-            const hourlyMatch = budgetText.match(/([\d,]+)/);
-            budget.amount = hourlyMatch ? parseInt(hourlyMatch[0].replace(/,/g, '')) : 0;
-          } else if (budgetText.includes('固定報酬制') || budgetText.includes('円')) {
-            budget.type = 'fixed';
-            const fixedMatch = budgetText.match(/([\d,]+)/);
-            budget.amount = fixedMatch ? parseInt(fixedMatch[0].replace(/,/g, '')) : 0;
+          // カテゴリ - リンク要素から取得
+          const categoryLinks = jobElement.querySelectorAll('a');
+          let category = params.categoryName;
+          for (const link of categoryLinks) {
+            const linkText = link?.textContent?.trim() || '';
+            const href = link?.getAttribute('href') || '';
+            if (href.includes('/public/jobs/category/') && linkText && linkText.length < 30) {
+              category = linkText;
+              break;
+            }
           }
 
-          // タグ（スキル） - listで管理されている場合
-          const skillList = jobElement.querySelector('list');
+          // スキル/タグ - リンク要素から抽出
+          const skillLinks = jobElement.querySelectorAll('a');
           const tags: string[] = [];
-          if (skillList) {
-            const skillItems = skillList.querySelectorAll('listitem link');
-            skillItems.forEach((skillItem: any) => {
-              const skillText = skillItem?.textContent?.trim();
-              if (skillText) tags.push(skillText);
-            });
-          }
+          skillLinks.forEach((skillItem: any) => {
+            const skillText = skillItem?.textContent?.trim();
+            const href = skillItem?.getAttribute('href') || '';
+            if (skillText && href.includes('/skill/') && skillText.length > 0 && skillText.length < 50) {
+              tags.push(skillText);
+            }
+          });
 
-          // クライアント情報 - link要素から取得
-          const clientLinks = jobElement.querySelectorAll('link');
+          // クライアント情報 - リンク要素から取得
+          const clientLinks = jobElement.querySelectorAll('a');
           let clientName = '匿名';
           for (const link of clientLinks) {
             const linkText = link?.textContent?.trim() || '';
-            if (linkText && !linkText.includes('この仕事に似た') && !linkText.includes('http') && linkText.length < 50) {
+            const href = link?.getAttribute('href') || '';
+            // クライアントページへのリンクを探す
+            if (linkText && href.includes('/public/employers/') && !href.includes('/public/jobs/') && linkText.length < 50) {
               clientName = linkText;
               break;
             }
           }
 
-          // 投稿日時 - time要素から取得
+          // 掲載日時 - time要素から取得
           const timeElement = jobElement.querySelector('time');
-          const postedAt = timeElement?.textContent?.trim() || timeElement?.getAttribute('datetime') || '';
+          const postedAt = timeElement?.textContent?.trim() || timeElement?.innerText?.trim() || new Date().toISOString().split('T')[0];
 
-          // 応募者数・契約数 - genericテキストから抽出
-          let applicants = 0;
-          const genericElements = jobElement.querySelectorAll('generic');
-          for (const generic of genericElements) {
-            const text = generic?.textContent?.trim() || '';
-            if (text.includes('契約数') || text.includes('応募数')) {
-              const numberMatch = text.match(/(\d+)/);
-              if (numberMatch) {
-                applicants = parseInt(numberMatch[1]);
-                break;
-              }
+          // 応募者数と期限 - テキストから抽出
+          let applicantCount = 0;
+          let deadline = '';
+
+          allElements.forEach((element: any) => {
+            const text = element?.textContent?.trim() || '';
+
+            // 契約数を抽出
+            const contractMatch = text.match(/契約数[^\d]*(\d+)/);
+            if (contractMatch) {
+              applicantCount = parseInt(contractMatch[1]) || 0;
             }
-          }
 
-          // 概要 - paragraph要素から取得
-          const descElement = jobElement.querySelector('paragraph');
-          const description = descElement?.textContent?.trim().slice(0, 200) || '';
+            // 期限を抽出
+            const deadlineMatch = text.match(/あと(\d+)日|(\d+月\d+日)/);
+            if (deadlineMatch) {
+              deadline = text;
+            }
+          });
 
-          const jobData = {
-            id,
-            title,
-            description: description + (description.length >= 200 ? '...' : ''),
-            url,
-            budget,
-            category: params.categoryName,
-            tags,
-            client: {
-              name: clientName,
-              rating: 0, // 評価情報は複雑な構造のため一旦0
-              reviewCount: 0
-            },
-            postedAt,
-            applicants,
+          const job = {
+            id: jobId,
+            title: title,
+            url: url,
+            description: description.substring(0, 500), // 長すぎる場合は切り詰め
+            budget: budgetText,
+            category: category,
+            tags: tags.slice(0, 10), // 最大10個のタグ
+            clientName: clientName,
+            postedAt: postedAt,
+            applicantCount: applicantCount,
+            deadline: deadline,
             scrapedAt: new Date().toISOString()
           };
 
-          extractedJobs.push(jobData);
-          console.log(`✅ 案件 ${extractedJobs.length}: ${title} (ID: ${id})`);
+          jobs.push(job);
+          console.log(`✅ 案件データ抽出成功: ${job.title} (${job.id})`);
 
         } catch (error) {
-          console.error(`❌ 案件 ${i + 1} 抽出エラー:`, error);
+          console.log(`❌ 案件 ${i} の処理中にエラー:`, error);
+          continue;
         }
       }
 
-      return extractedJobs;
-    }, {
-      maxJobsLimit: maxJobs,
-      categoryName: category,
-      scrapedIds: Array.from(scrapedJobsCache)
-    });
+      console.log(`📊 合計 ${jobs.length} 件の案件を抽出しました (セレクター: ${usedSelector})`);
+      return jobs;
+    }, { maxJobsLimit: maxJobs, categoryName: category, scrapedIds: Array.from(scrapedJobsCache) });
 
     // 重複チェックのためキャッシュに追加
     jobs.forEach((job: CrowdWorksJob) => scrapedJobsCache.add(job.id));
