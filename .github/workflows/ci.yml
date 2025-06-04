@@ -1,5 +1,11 @@
 name: CI/CD Pipeline
 
+# GitHub Actionsの権限設定
+permissions:
+  contents: read
+  security-events: write
+  id-token: write # OIDC認証用
+
 on:
   push:
     branches: [ main, develop ]
@@ -212,12 +218,20 @@ jobs:
           echo "✅ Docker container test passed"
 
   # Staging環境デプロイ（developブランチ）
+  # 注意: AWS認証情報の設定が必要です！
+  # GitHubリポジトリの Settings > Secrets and variables > Actions で以下を設定してください：
+  # - STAGING_AWS_ACCESS_KEY_ID
+  # - STAGING_AWS_SECRET_ACCESS_KEY
+  # - STAGING_OPENAI_API_KEY
+  # - STAGING_CROWDWORKS_EMAIL
+  # - STAGING_CROWDWORKS_PASSWORD
   deploy-staging:
     name: Deploy to Staging
     runs-on: ubuntu-latest
     timeout-minutes: 30
     needs: [unit-tests, build-test, cdk-synth, docker-build]
-    if: github.ref == 'refs/heads/develop' && github.event_name == 'push'
+    # AWS認証情報が設定されるまで一時的に無効化
+    if: false # github.ref == 'refs/heads/develop' && github.event_name == 'push'
     
     steps:
       - name: Checkout code
@@ -262,12 +276,20 @@ jobs:
           echo "✅ Staging deployment verification completed"
 
   # Production環境デプロイ（mainブランチ + タグ）
+  # 注意: AWS認証情報の設定が必要です！
+  # GitHubリポジトリの Settings > Secrets and variables > Actions で以下を設定してください：
+  # - PRODUCTION_AWS_ACCESS_KEY_ID
+  # - PRODUCTION_AWS_SECRET_ACCESS_KEY
+  # - PRODUCTION_OPENAI_API_KEY
+  # - PRODUCTION_CROWDWORKS_EMAIL
+  # - PRODUCTION_CROWDWORKS_PASSWORD
   deploy-production:
     name: Deploy to Production
     runs-on: ubuntu-latest
     timeout-minutes: 30
     needs: [unit-tests, build-test, cdk-synth, security-scan]
-    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    # AWS認証情報が設定されるまで一時的に無効化
+    if: false # github.ref == 'refs/heads/main' && github.event_name == 'push'
     
     steps:
       - name: Checkout code
