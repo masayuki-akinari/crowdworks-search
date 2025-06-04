@@ -40,9 +40,9 @@ The content is organized as follows:
 </file_summary>
 
 <directory_structure>
-.dockerignore
 .eslintrc.js
 .github/workflows/ci.yml
+.gitignore
 .prettierrc
 app.ts
 cdk.json
@@ -60,14 +60,36 @@ readme.md
 src/index.ts
 src/infrastructure/crowdworks-searcher-stack.ts
 src/lambda/handler.ts
+src/services/index.ts
 src/types/index.ts
+src/utils/index.ts
+test/sample.test.js
 test/sample.test.ts
+test/setup.js
 test/setup.ts
+tsconfig.cdk.json
 tsconfig.json
 </directory_structure>
 
 <files>
 This section contains the contents of the repository's files.
+
+<file path=".prettierrc">
+{
+    "semi": true,
+    "trailingComma": "es5",
+    "singleQuote": true,
+    "printWidth": 100,
+    "tabWidth": 2,
+    "useTabs": false,
+    "bracketSpacing": true,
+    "arrowParens": "avoid",
+    "endOfLine": "lf",
+    "quoteProps": "as-needed",
+    "bracketSameLine": false,
+    "embeddedLanguageFormatting": "auto"
+}
+</file>
 
 <file path="app.ts">
 #!/usr/bin/env node
@@ -78,10 +100,10 @@ import { CrowdWorksSearcherStack } from './src/infrastructure/crowdworks-searche
 const app = new cdk.App();
 
 // 環境設定
-const env = {
-    account: process.env.CDK_DEFAULT_ACCOUNT,
-    region: process.env.CDK_DEFAULT_REGION || process.env.AWS_REGION || 'ap-northeast-1',
-};
+const account = process.env['CDK_DEFAULT_ACCOUNT'];
+const region = process.env['CDK_DEFAULT_REGION'] || process.env['AWS_REGION'] || 'ap-northeast-1';
+
+const env: cdk.Environment = account ? { account, region } : { region };
 
 // スタック作成
 new CrowdWorksSearcherStack(app, 'CrowdWorksSearcherStack', {
@@ -154,598 +176,6 @@ new CrowdWorksSearcherStack(app, 'CrowdWorksSearcherStack', {
         "@aws-cdk/aws-rds:preventRenderingDeprecatedCredentials": true,
         "@aws-cdk/aws-codepipeline-actions:useNewDefaultBranchForSourceAction": true
     }
-}
-</file>
-
-<file path="src/infrastructure/crowdworks-searcher-stack.ts">
-import * as cdk from 'aws-cdk-lib';
-import * as lambda from 'aws-cdk-lib/aws-lambda';
-import * as s3 from 'aws-cdk-lib/aws-s3';
-import * as events from 'aws-cdk-lib/aws-events';
-import * as targets from 'aws-cdk-lib/aws-events-targets';
-import * as iam from 'aws-cdk-lib/aws-iam';
-import { Construct } from 'constructs';
-
-export class CrowdWorksSearcherStack extends cdk.Stack {
-    constructor(scope: Construct, id: string, props?: cdk.StackProps) {
-        super(scope, id, props);
-
-        // S3バケット（データ保存用）
-        const dataBucket = new s3.Bucket(this, 'CrowdWorksDataBucket', {
-            bucketName: `crowdworks-searcher-data-${this.account}`,
-            encryption: s3.BucketEncryption.S3_MANAGED,
-            blockPublicAccess: s3.BlockPublicAccess.BLOCK_ALL,
-            lifecycleRules: [
-                {
-                    id: 'DeleteOldData',
-                    enabled: true,
-                    expiration: cdk.Duration.days(7),
-                }
-            ],
-            removalPolicy: cdk.RemovalPolicy.DESTROY,
-            autoDeleteObjects: true,
-        });
-
-        // Lambda実行ロール
-        const lambdaRole = new iam.Role(this, 'LambdaExecutionRole', {
-            assumedBy: new iam.ServicePrincipal('lambda.amazonaws.com'),
-            managedPolicies: [
-                iam.ManagedPolicy.fromAwsManagedPolicyName('service-role/AWSLambdaBasicExecutionRole')
-            ],
-            inlinePolicies: {
-                S3Access: new iam.PolicyDocument({
-                    statements: [
-                        new iam.PolicyStatement({
-                            effect: iam.Effect.ALLOW,
-                            actions: [
-                                's3:GetObject',
-                                's3:PutObject',
-                                's3:ListBucket'
-                            ],
-                            resources: [
-                                dataBucket.bucketArn,
-                                `${dataBucket.bucketArn}/*`
-                            ]
-                        })
-                    ]
-                })
-            }
-        });
-
-        // Lambda関数（基本版）
-        const mainFunction = new lambda.Function(this, 'CrowdWorksMainFunction', {
-            runtime: lambda.Runtime.NODEJS_18_X,
-            handler: 'lambda/handler.lambdaHandler',
-            code: lambda.Code.fromAsset('./dist'),
-            timeout: cdk.Duration.minutes(10),
-            memorySize: 1024,
-            role: lambdaRole,
-            environment: {
-                DATA_BUCKET_NAME: dataBucket.bucketName,
-                AWS_REGION: this.region,
-            },
-        });
-
-        // EventBridge（スケジューラー）
-        const scheduleRule = new events.Rule(this, 'ScheduleRule', {
-            schedule: events.Schedule.rate(cdk.Duration.minutes(15)),
-            description: 'CrowdWorks案件検索の定期実行（15分間隔）',
-        });
-
-        scheduleRule.addTarget(new targets.LambdaFunction(mainFunction));
-
-        // 出力
-        new cdk.CfnOutput(this, 'DataBucketName', {
-            value: dataBucket.bucketName,
-            description: 'S3データバケット名',
-        });
-
-        new cdk.CfnOutput(this, 'LambdaFunctionName', {
-            value: mainFunction.functionName,
-            description: 'Lambda関数名',
-        });
-    }
-}
-</file>
-
-<file path=".dockerignore">
-# Dependencies
-node_modules
-npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
-
-# Build outputs
-dist
-build
-*.tsbuildinfo
-
-# Coverage directory used by tools like istanbul
-coverage
-
-# CDK outputs
-cdk.out
-
-# Environment variables
-.env
-.env.local
-.env.development.local
-.env.test.local
-.env.production.local
-
-# IDE files
-.vscode
-.idea
-*.swp
-*.swo
-*~
-
-# OS generated files
-.DS_Store
-.DS_Store?
-._*
-.Spotlight-V100
-.Trashes
-ehthumbs.db
-Thumbs.db
-
-# Git
-.git
-.gitignore
-
-# Docker
-Dockerfile*
-docker-compose*
-.dockerignore
-
-# Documentation
-docs
-*.md
-repomix-output.xml
-
-# Test files
-test
-*.test.ts
-*.spec.ts
-__tests__
-
-# Logs
-logs
-*.log
-
-# Runtime data
-pids
-*.pid
-*.seed
-*.pid.lock
-
-# Optional npm cache directory
-.npm
-
-# Optional eslint cache
-.eslintcache
-
-# Temporary folders
-tmp
-temp
-</file>
-
-<file path=".eslintrc.js">
-module.exports = {
-    parser: '@typescript-eslint/parser',
-    parserOptions: {
-        ecmaVersion: 2022,
-        sourceType: 'module',
-        project: './tsconfig.json',
-    },
-    plugins: [
-        '@typescript-eslint',
-        'import',
-        'jest'
-    ],
-    extends: [
-        'eslint:recommended',
-        '@typescript-eslint/recommended',
-        '@typescript-eslint/recommended-requiring-type-checking',
-        'prettier'
-    ],
-    env: {
-        node: true,
-        es2022: true,
-        jest: true
-    },
-    rules: {
-        // any型を厳格に禁止
-        '@typescript-eslint/no-explicit-any': 'error',
-        '@typescript-eslint/no-unsafe-any': 'error',
-        '@typescript-eslint/no-unsafe-assignment': 'error',
-        '@typescript-eslint/no-unsafe-call': 'error',
-        '@typescript-eslint/no-unsafe-member-access': 'error',
-        '@typescript-eslint/no-unsafe-return': 'error',
-        '@typescript-eslint/no-unsafe-argument': 'error',
-
-        // TypeScript strict mode 関連
-        '@typescript-eslint/no-unused-vars': ['error', {
-            argsIgnorePattern: '^_',
-            varsIgnorePattern: '^_'
-        }],
-        '@typescript-eslint/explicit-function-return-type': 'warn',
-        '@typescript-eslint/explicit-module-boundary-types': 'warn',
-        '@typescript-eslint/no-non-null-assertion': 'error',
-        '@typescript-eslint/prefer-nullish-coalescing': 'error',
-        '@typescript-eslint/prefer-optional-chain': 'error',
-        '@typescript-eslint/strict-boolean-expressions': 'error',
-
-        // コード品質
-        '@typescript-eslint/no-floating-promises': 'error',
-        '@typescript-eslint/await-thenable': 'error',
-        '@typescript-eslint/require-await': 'error',
-        '@typescript-eslint/return-await': 'error',
-
-        // import関連
-        'import/order': ['error', {
-            'groups': [
-                'builtin',
-                'external',
-                'internal',
-                'parent',
-                'sibling',
-                'index'
-            ],
-            'newlines-between': 'always',
-            'alphabetize': {
-                'order': 'asc',
-                'caseInsensitive': true
-            }
-        }],
-        'import/no-unresolved': 'off', // TypeScript handles this
-
-        // General rules
-        'no-console': 'warn',
-        'no-debugger': 'error',
-        'prefer-const': 'error',
-        'no-var': 'error',
-
-        // Jest specific rules
-        'jest/no-disabled-tests': 'warn',
-        'jest/no-focused-tests': 'error',
-        'jest/no-identical-title': 'error',
-        'jest/prefer-to-have-length': 'warn',
-        'jest/valid-expect': 'error'
-    },
-    overrides: [
-        {
-            files: ['**/*.test.ts', '**/*.spec.ts'],
-            env: {
-                jest: true
-            },
-            rules: {
-                '@typescript-eslint/no-non-null-assertion': 'off',
-                '@typescript-eslint/explicit-function-return-type': 'off'
-            }
-        },
-        {
-            files: ['src/infrastructure/**/*.ts'],
-            rules: {
-                // CDK constructs may need looser rules
-                '@typescript-eslint/explicit-function-return-type': 'off'
-            }
-        }
-    ],
-    ignorePatterns: [
-        'dist/',
-        'node_modules/',
-        'cdk.out/',
-        '*.js',
-        '*.d.ts'
-    ]
-};
-</file>
-
-<file path=".github/workflows/ci.yml">
-name: CI/CD Pipeline
-
-on:
-  push:
-    branches: [ main, develop ]
-    tags: [ 'v*' ]
-  pull_request:
-    branches: [ main, develop ]
-
-env:
-  NODE_VERSION: '18'
-  AWS_REGION: 'ap-northeast-1'
-
-jobs:
-  # コード品質チェック（最速実行）
-  code-quality:
-    name: Code Quality Check
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: ${{ env.NODE_VERSION }}
-          cache: 'npm'
-
-      - name: Install dependencies
-        run: npm ci
-
-      - name: Lint check
-        run: npm run lint
-
-      - name: Format check
-        run: npm run format -- --check
-
-      - name: TypeScript type check
-        run: npm run type-check
-
-  # 単体テスト（Docker環境）
-  unit-tests:
-    name: Unit Tests
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
-    needs: code-quality
-    
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Build Docker image for testing
-        run: |
-          docker build -t crowdworks-search:test .
-
-      - name: Run unit tests in Docker
-        run: |
-          docker run --rm \
-            -v ${{ github.workspace }}:/workspace \
-            -e NODE_ENV=test \
-            -e AWS_REGION=${{ env.AWS_REGION }} \
-            crowdworks-search:test \
-            npm run test:coverage
-
-      - name: Upload coverage reports
-        uses: codecov/codecov-action@v3
-        if: always()
-        with:
-          file: ./coverage/lcov.info
-          flags: unittests
-          name: codecov-umbrella
-
-  # ビルドテスト
-  build-test:
-    name: Build Test
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    needs: code-quality
-    
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: ${{ env.NODE_VERSION }}
-          cache: 'npm'
-
-      - name: Install dependencies
-        run: npm ci
-
-      - name: Build TypeScript
-        run: npm run build
-
-      - name: Verify build output
-        run: |
-          if [ ! -d "dist" ]; then
-            echo "Build failed: dist directory not found"
-            exit 1
-          fi
-          if [ ! -f "dist/index.js" ]; then
-            echo "Build failed: main output file not found"
-            exit 1
-          fi
-          echo "✅ Build verification passed"
-
-  # CDK構文チェック
-  cdk-synth:
-    name: CDK Synth Check
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
-    needs: code-quality
-    if: github.event_name == 'push' || github.event_name == 'pull_request'
-    
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: ${{ env.NODE_VERSION }}
-          cache: 'npm'
-
-      - name: Install dependencies
-        run: npm ci
-
-      - name: Build TypeScript
-        run: npm run build
-
-      - name: CDK Synth (dry-run)
-        run: npm run cdk:synth
-        env:
-          CDK_DEFAULT_REGION: ${{ env.AWS_REGION }}
-
-  # セキュリティスキャン
-  security-scan:
-    name: Security Scan
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    needs: code-quality
-    if: github.event_name == 'push'
-    
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Run npm audit
-        run: npm audit --audit-level=high
-        continue-on-error: true
-
-      - name: Run CodeQL Analysis
-        uses: github/codeql-action/init@v2
-        with:
-          languages: javascript
-
-      - name: Perform CodeQL Analysis
-        uses: github/codeql-action/analyze@v2
-
-  # 統合テスト（Docker環境）
-  integration-tests:
-    name: Integration Tests
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
-    needs: [unit-tests, build-test]
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Build test environment
-        run: |
-          docker-compose build test
-
-      - name: Run integration tests
-        run: |
-          docker-compose --profile test run --rm test npm run test:integration
-
-  # Staging環境デプロイ
-  deploy-staging:
-    name: Deploy to Staging
-    runs-on: ubuntu-latest
-    timeout-minutes: 30
-    needs: [unit-tests, build-test, cdk-synth]
-    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
-    
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@v4
-        with:
-          aws-access-key-id: ${{ secrets.STAGING_AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.STAGING_AWS_SECRET_ACCESS_KEY }}
-          aws-region: ${{ env.AWS_REGION }}
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: ${{ env.NODE_VERSION }}
-          cache: 'npm'
-
-      - name: Install dependencies
-        run: npm ci
-
-      - name: Build application
-        run: npm run build
-
-      - name: Deploy to staging
-        run: |
-          npm run cdk:deploy -- --require-approval never --context stage=staging
-        env:
-          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
-          CROWDWORKS_EMAIL: ${{ secrets.CROWDWORKS_EMAIL }}
-          CROWDWORKS_PASSWORD: ${{ secrets.CROWDWORKS_PASSWORD }}
-
-      - name: Run smoke tests
-        run: |
-          # 基本的なヘルスチェック
-          echo "🧪 Running staging smoke tests..."
-          # TODO: 実際のスモークテストを実装
-
-  # Production環境デプロイ（手動承認）
-  deploy-production:
-    name: Deploy to Production
-    runs-on: ubuntu-latest
-    timeout-minutes: 30
-    needs: [deploy-staging, integration-tests]
-    if: startsWith(github.ref, 'refs/tags/v')
-    
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@v4
-        with:
-          aws-access-key-id: ${{ secrets.PRODUCTION_AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.PRODUCTION_AWS_SECRET_ACCESS_KEY }}
-          aws-region: ${{ env.AWS_REGION }}
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: ${{ env.NODE_VERSION }}
-          cache: 'npm'
-
-      - name: Install dependencies
-        run: npm ci
-
-      - name: Build application
-        run: npm run build
-
-      - name: Deploy to production
-        run: |
-          npm run cdk:deploy -- --require-approval never --context stage=production
-        env:
-          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
-          CROWDWORKS_EMAIL: ${{ secrets.CROWDWORKS_EMAIL }}
-          CROWDWORKS_PASSWORD: ${{ secrets.CROWDWORKS_PASSWORD }}
-
-      - name: Post-deployment verification
-        run: |
-          echo "🚀 Production deployment completed"
-          echo "Tag: ${{ github.ref }}"
-          echo "Commit: ${{ github.sha }}"
-
-  # 通知（失敗時のみ）
-  notify-failure:
-    name: Notify Failure
-    runs-on: ubuntu-latest
-    needs: [code-quality, unit-tests, build-test, cdk-synth]
-    if: failure()
-    
-    steps:
-      - name: Notify failure
-        run: |
-          echo "❌ CI/CD Pipeline failed"
-          echo "Branch: ${{ github.ref }}"
-          echo "Commit: ${{ github.sha }}"
-          echo "Actor: ${{ github.actor }}"
-          # TODO: Slack通知などを実装
-</file>
-
-<file path=".prettierrc">
-{
-    "semi": true,
-    "trailingComma": "es5",
-    "singleQuote": true,
-    "printWidth": 100,
-    "tabWidth": 2,
-    "useTabs": false,
-    "bracketSpacing": true,
-    "arrowParens": "avoid",
-    "endOfLine": "lf",
-    "quoteProps": "as-needed",
-    "bracketSameLine": false,
-    "embeddedLanguageFormatting": "auto"
 }
 </file>
 
@@ -842,77 +272,6 @@ networks:
     name: crowdworks-search-network
 </file>
 
-<file path="Dockerfile">
-# Lambda環境に近いAmazon Linux 2ベース（Node.js 18）
-FROM public.ecr.aws/lambda/nodejs:18 as base
-
-# 開発ツールをインストール
-USER root
-
-# 必要なシステムパッケージのインストール
-RUN dnf update -y && \
-    dnf install -y \
-    git \
-    tar \
-    gzip \
-    unzip \
-    which \
-    procps \
-    && dnf clean all
-
-# AWS CLI v2のインストール
-RUN curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip" && \
-    unzip awscliv2.zip && \
-    ./aws/install && \
-    rm -rf awscliv2.zip aws
-
-# AWS CDK CLIのグローバルインストール
-RUN npm install -g aws-cdk@latest
-
-# 作業ディレクトリの設定
-WORKDIR /workspace
-
-# package.jsonとpackage-lock.jsonをコピー（依存関係のキャッシュ効率化）
-COPY package*.json ./
-
-# 依存関係のインストール
-RUN npm ci
-
-# Playwrightブラウザのインストール（Lambda Layer用）
-RUN npx playwright install --with-deps chromium
-
-# === 開発用ステージ ===
-FROM base as development
-
-# 開発用の追加パッケージ
-RUN npm install -g nodemon ts-node
-
-# アプリケーションのソースコードをコピー
-COPY . .
-
-# TypeScriptのビルド
-RUN npm run build
-
-# 開発用ポートを公開（将来的なAPI Gateway Local用）
-EXPOSE 3000
-
-# 開発用のデフォルトコマンド
-CMD ["npm", "run", "dev"]
-
-# === 本番用ステージ ===
-FROM base as production
-
-# 本番用の最小限パッケージのみインストール
-COPY package*.json ./
-RUN npm ci --only=production && npm cache clean --force
-
-# ビルド済みアプリケーションをコピー
-COPY --from=development /workspace/dist ./dist
-
-# Lambda関数ハンドラーの設定
-CMD ["dist/lambda/handler.lambdaHandler"]
-</file>
-
 <file path="docs/README.md">
 # 設計書インデックス
 
@@ -950,248 +309,94 @@ CMD ["dist/lambda/handler.lambdaHandler"]
 |      |        |          |
 </file>
 
-<file path="jest.config.js">
-module.exports = {
-    // テスト環境
-    preset: 'ts-jest',
-    testEnvironment: 'node',
+<file path="src/infrastructure/crowdworks-searcher-stack.ts">
+import * as cdk from 'aws-cdk-lib';
+import * as lambda from 'aws-cdk-lib/aws-lambda';
+import * as s3 from 'aws-cdk-lib/aws-s3';
+import * as events from 'aws-cdk-lib/aws-events';
+import * as targets from 'aws-cdk-lib/aws-events-targets';
+import * as iam from 'aws-cdk-lib/aws-iam';
+import { Construct } from 'constructs';
 
-    // TypeScript設定
-    transform: {
-        '^.+\\.tsx?$': ['ts-jest', {
-            tsconfig: './tsconfig.json',
-            isolatedModules: true
-        }]
-    },
+export class CrowdWorksSearcherStack extends cdk.Stack {
+    constructor(scope: Construct, id: string, props?: cdk.StackProps) {
+        super(scope, id, props);
 
-    // ファイル拡張子の設定
-    moduleFileExtensions: ['ts', 'tsx', 'js', 'jsx', 'json'],
+        // S3バケット（データ保存用）
+        const dataBucket = new s3.Bucket(this, 'CrowdWorksDataBucket', {
+            bucketName: `crowdworks-searcher-data-${this.account}`,
+            encryption: s3.BucketEncryption.S3_MANAGED,
+            blockPublicAccess: s3.BlockPublicAccess.BLOCK_ALL,
+            lifecycleRules: [
+                {
+                    id: 'DeleteOldData',
+                    enabled: true,
+                    expiration: cdk.Duration.days(7),
+                }
+            ],
+            removalPolicy: cdk.RemovalPolicy.DESTROY,
+            autoDeleteObjects: true,
+        });
 
-    // パスマッピング（tsconfig.jsonと同期）
-    moduleNameMapping: {
-        '^@/(.*)$': '<rootDir>/src/$1',
-        '^@/types/(.*)$': '<rootDir>/src/types/$1',
-        '^@/services/(.*)$': '<rootDir>/src/services/$1',
-        '^@/utils/(.*)$': '<rootDir>/src/utils/$1',
-        '^@/infrastructure/(.*)$': '<rootDir>/src/infrastructure/$1'
-    },
+        // Lambda実行ロール
+        const lambdaRole = new iam.Role(this, 'LambdaExecutionRole', {
+            assumedBy: new iam.ServicePrincipal('lambda.amazonaws.com'),
+            managedPolicies: [
+                iam.ManagedPolicy.fromAwsManagedPolicyName('service-role/AWSLambdaBasicExecutionRole')
+            ],
+            inlinePolicies: {
+                S3Access: new iam.PolicyDocument({
+                    statements: [
+                        new iam.PolicyStatement({
+                            effect: iam.Effect.ALLOW,
+                            actions: [
+                                's3:GetObject',
+                                's3:PutObject',
+                                's3:ListBucket'
+                            ],
+                            resources: [
+                                dataBucket.bucketArn,
+                                `${dataBucket.bucketArn}/*`
+                            ]
+                        })
+                    ]
+                })
+            }
+        });
 
-    // テストファイルのパターン
-    testMatch: [
-        '<rootDir>/src/**/*.test.(ts|tsx)',
-        '<rootDir>/src/**/*.spec.(ts|tsx)',
-        '<rootDir>/test/**/*.test.(ts|tsx)',
-        '<rootDir>/test/**/*.spec.(ts|tsx)'
-    ],
+        // Lambda関数（基本版）
+        const mainFunction = new lambda.Function(this, 'CrowdWorksMainFunction', {
+            runtime: lambda.Runtime.NODEJS_18_X,
+            handler: 'lambda/handler.lambdaHandler',
+            code: lambda.Code.fromAsset('./dist'),
+            timeout: cdk.Duration.minutes(10),
+            memorySize: 1024,
+            role: lambdaRole,
+            environment: {
+                DATA_BUCKET_NAME: dataBucket.bucketName,
+            },
+        });
 
-    // カバレッジ設定
-    collectCoverage: false, // デフォルトでは無効（npm run test:coverageで有効）
-    collectCoverageFrom: [
-        'src/**/*.{ts,tsx}',
-        '!src/**/*.d.ts',
-        '!src/**/*.test.{ts,tsx}',
-        '!src/**/*.spec.{ts,tsx}',
-        '!src/test/**/*',
-        '!src/types/**/*', // 型定義はカバレッジから除外
-    ],
-    coverageDirectory: 'coverage',
-    coverageReporters: ['text', 'lcov', 'html'],
-    coverageThreshold: {
-        global: {
-            branches: 75,
-            functions: 80,
-            lines: 80,
-            statements: 80
-        }
-    },
+        // EventBridge（スケジューラー）
+        const scheduleRule = new events.Rule(this, 'ScheduleRule', {
+            schedule: events.Schedule.rate(cdk.Duration.minutes(15)),
+            description: 'CrowdWorks案件検索の定期実行（15分間隔）',
+        });
 
-    // セットアップファイル
-    setupFilesAfterEnv: ['<rootDir>/test/setup.ts'],
+        scheduleRule.addTarget(new targets.LambdaFunction(mainFunction));
 
-    // モック設定
-    clearMocks: true,
-    resetMocks: true,
-    restoreMocks: true,
+        // 出力
+        new cdk.CfnOutput(this, 'DataBucketName', {
+            value: dataBucket.bucketName,
+            description: 'S3データバケット名',
+        });
 
-    // タイムアウト設定
-    testTimeout: 30000, // 30秒（AWS SDK呼び出しなど時間がかかる場合に対応）
-
-    // 並列実行設定
-    maxWorkers: '50%', // CPUコア数の50%で並列実行
-
-    // エラー表示設定
-    verbose: true,
-    errorOnDeprecated: true,
-
-    // 不要なログを抑制
-    silent: false,
-
-    // Jest環境での警告を抑制
-    globals: {
-        'ts-jest': {
-            useESM: false,
-            tsconfig: './tsconfig.json'
-        }
-    },
-
-    // テスト実行前後のフック
-    globalSetup: undefined,
-    globalTeardown: undefined
-};
-</file>
-
-<file path="package.json">
-{
-    "name": "crowdworks-search",
-    "version": "1.0.0",
-    "description": "クラウドワークス案件自動検索・評価システム",
-    "main": "dist/index.js",
-    "scripts": {
-        "build": "tsc",
-        "build:watch": "tsc --watch",
-        "clean": "rimraf dist",
-        "lint": "eslint 'src/**/*.ts'",
-        "lint:fix": "eslint 'src/**/*.ts' --fix",
-        "format": "prettier --write 'src/**/*.ts'",
-        "type-check": "tsc --noEmit",
-        "test": "jest",
-        "test:watch": "jest --watch",
-        "test:coverage": "jest --coverage",
-        "test:integration": "jest --testPathPattern=integration",
-        "test:e2e": "jest --testPathPattern=e2e",
-        "cdk:synth": "cdk synth",
-        "cdk:deploy": "cdk deploy",
-        "cdk:destroy": "cdk destroy",
-        "cdk:diff": "cdk diff",
-        "dev": "ts-node src/index.ts",
-        "start": "node dist/index.js",
-        "prepare": "husky install"
-    },
-    "keywords": [
-        "crowdworks",
-        "automation",
-        "scraping",
-        "aws",
-        "serverless",
-        "typescript"
-    ],
-    "author": "Your Name",
-    "license": "MIT",
-    "private": true,
-    "engines": {
-        "node": ">=18.0.0",
-        "npm": ">=8.0.0"
-    },
-    "dependencies": {
-        "aws-cdk-lib": "^2.110.0",
-        "constructs": "^10.3.0",
-        "aws-sdk": "^2.1490.0",
-        "@aws-sdk/client-s3": "^3.450.0",
-        "@aws-sdk/client-lambda": "^3.450.0",
-        "@aws-sdk/client-ssm": "^3.450.0",
-        "@aws-sdk/client-sns": "^3.450.0",
-        "playwright": "^1.40.0",
-        "openai": "^4.20.0",
-        "zod": "^3.22.0",
-        "source-map-support": "^0.5.21"
-    },
-    "devDependencies": {
-        "@types/node": "^20.8.0",
-        "@types/jest": "^29.5.0",
-        "@types/aws-lambda": "^8.10.0",
-        "@typescript-eslint/eslint-plugin": "^6.8.0",
-        "@typescript-eslint/parser": "^6.8.0",
-        "aws-cdk": "^2.110.0",
-        "eslint": "^8.51.0",
-        "eslint-config-prettier": "^9.0.0",
-        "eslint-plugin-import": "^2.28.0",
-        "eslint-plugin-jest": "^27.4.0",
-        "jest": "^29.7.0",
-        "prettier": "^3.0.0",
-        "rimraf": "^5.0.0",
-        "ts-jest": "^29.1.0",
-        "ts-node": "^10.9.0",
-        "typescript": "^5.2.0",
-        "husky": "^8.0.0",
-        "lint-staged": "^15.0.0",
-        "aws-sdk-client-mock": "^3.0.0",
-        "nock": "^13.3.0",
-        "tsconfig-paths": "^4.2.0"
-    },
-    "husky": {
-        "hooks": {
-            "pre-commit": "lint-staged",
-            "pre-push": "npm run type-check && npm run test"
-        }
-    },
-    "lint-staged": {
-        "src/**/*.{ts,tsx}": [
-            "eslint --fix",
-            "prettier --write",
-            "git add"
-        ]
+        new cdk.CfnOutput(this, 'LambdaFunctionName', {
+            value: mainFunction.functionName,
+            description: 'Lambda関数名',
+        });
     }
 }
-</file>
-
-<file path="src/index.ts">
-/**
- * CrowdWorks Search System - Main Entry Point
- * Docker環境での開発用エントリーポイント
- */
-
-import { ExecutionLog } from '@/types';
-
-// 環境変数の検証
-function validateEnvironment(): void {
-    const required = ['NODE_ENV', 'AWS_REGION'];
-    const missing = required.filter(key => !process.env[key]);
-
-    if (missing.length > 0) {
-        throw new Error(`Missing required environment variables: ${missing.join(', ')}`);
-    }
-}
-
-// メイン実行関数
-async function main(): Promise<void> {
-    try {
-        validateEnvironment();
-
-        const log: ExecutionLog = {
-            executionId: Date.now().toString(),
-            timestamp: new Date().toISOString(),
-            status: 'success',
-            duration: 0,
-            jobsScraped: 0,
-            newJobs: 0,
-            aiEvaluated: 0,
-            highScoreJobs: 0,
-            costEstimate: 0,
-        };
-
-        console.log('🚀 CrowdWorks Search System - Development Mode');
-        console.log(`Environment: ${process.env.NODE_ENV}`);
-        console.log(`AWS Region: ${process.env.AWS_REGION}`);
-        console.log(`Execution ID: ${log.executionId}`);
-
-        // TODO: 実際の処理を実装
-        console.log('✅ Development setup completed');
-
-    } catch (error) {
-        console.error('❌ Failed to start application:', error);
-        process.exit(1);
-    }
-}
-
-// 開発環境でのみ実行
-if (require.main === module) {
-    main().catch(error => {
-        console.error('Fatal error:', error);
-        process.exit(1);
-    });
-}
-
-export { main };
 </file>
 
 <file path="src/lambda/handler.ts">
@@ -1264,6 +469,13 @@ export const lambdaHandler = async (
         return errorResponse;
     }
 };
+</file>
+
+<file path="src/services/index.ts">
+// Services module exports
+// TODO: 実際のサービスクラスを実装後、ここからエクスポート
+
+export { };
 </file>
 
 <file path="src/types/index.ts">
@@ -1430,6 +642,110 @@ export class AppError extends Error {
 }
 </file>
 
+<file path="src/utils/index.ts">
+// Utility functions exports
+// TODO: ユーティリティ関数を実装後、ここからエクスポート
+
+export { };
+</file>
+
+<file path="test/sample.test.js">
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+const types_1 = require("@/types");
+describe('Sample Tests', () => {
+    describe('Basic functionality', () => {
+        it('should pass basic test', () => {
+            expect(true).toBe(true);
+        });
+        it('should handle numbers correctly', () => {
+            const result = 2 + 2;
+            expect(result).toBe(4);
+        });
+        it('should work with async functions', async () => {
+            const promise = Promise.resolve('test');
+            await expect(promise).resolves.toBe('test');
+        });
+    });
+    describe('Type definitions', () => {
+        it('should create valid JobData object', () => {
+            const jobData = {
+                id: 'test-job-001',
+                title: 'テストジョブ',
+                description: 'これはテスト用の案件です',
+                url: 'https://crowdworks.jp/public/jobs/test-001',
+                budget: 100000,
+                deadline: new Date('2024-12-31'),
+                workType: 'fixed',
+                category: 'システム開発',
+                clientName: 'テストクライアント',
+                clientRating: 4.5,
+                clientReviews: 10,
+                skills: ['TypeScript', 'React', 'AWS'],
+                experience: 'intermediate',
+                scrapedAt: new Date(),
+                source: 'crowdworks',
+            };
+            expect(jobData).toBeValidJobData();
+            expect(jobData.budget).toBe(100000);
+            expect(jobData.skills).toHaveLength(3);
+            expect(jobData.workType).toBe('fixed');
+        });
+        it('should create valid AppError', () => {
+            const error = new types_1.AppError(types_1.ErrorType.SCRAPING_ERROR, 'Test error message', true);
+            expect(error).toBeInstanceOf(Error);
+            expect(error).toBeInstanceOf(types_1.AppError);
+            expect(error.type).toBe(types_1.ErrorType.SCRAPING_ERROR);
+            expect(error.message).toBe('Test error message');
+            expect(error.retryable).toBe(true);
+            expect(error.name).toBe('AppError');
+        });
+    });
+    describe('Environment variables', () => {
+        it('should have test environment variables set', () => {
+            expect(process.env.NODE_ENV).toBe('test');
+            expect(process.env.AWS_REGION).toBe('ap-northeast-1');
+            expect(process.env.TZ).toBe('Asia/Tokyo');
+        });
+    });
+    describe('Date handling', () => {
+        it('should handle dates correctly', () => {
+            const now = new Date();
+            const tomorrow = new Date(Date.now() + 24 * 60 * 60 * 1000);
+            expect(now).toBeValidDate();
+            expect(tomorrow).toBeValidDate();
+            expect(tomorrow.getTime()).toBeGreaterThan(now.getTime());
+        });
+        it('should handle invalid dates', () => {
+            const invalidDate = new Date('invalid');
+            expect(invalidDate).not.toBeValidDate();
+        });
+    });
+    describe('Custom matchers', () => {
+        it('should use custom toBeValidDate matcher', () => {
+            const validDate = new Date();
+            const invalidDate = new Date('invalid');
+            expect(validDate).toBeValidDate();
+            expect(invalidDate).not.toBeValidDate();
+        });
+        it('should use custom toBeValidJobData matcher', () => {
+            const validJob = {
+                id: 'test-001',
+                title: 'Test Job',
+                budget: 50000,
+            };
+            const invalidJob = {
+                title: 'Missing ID',
+                budget: '50000',
+            };
+            expect(validJob).toBeValidJobData();
+            expect(invalidJob).not.toBeValidJobData();
+        });
+    });
+});
+//# sourceMappingURL=sample.test.js.map
+</file>
+
 <file path="test/sample.test.ts">
 /**
  * Sample test file to verify Jest configuration
@@ -1548,6 +864,60 @@ describe('Sample Tests', () => {
 });
 </file>
 
+<file path="test/setup.js">
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+require("jest");
+jest.mock('@aws-sdk/client-s3');
+jest.mock('@aws-sdk/client-lambda');
+jest.mock('@aws-sdk/client-ssm');
+jest.mock('@aws-sdk/client-sns');
+jest.mock('openai');
+jest.mock('playwright');
+process.env.NODE_ENV = 'test';
+process.env.AWS_REGION = 'ap-northeast-1';
+process.env.LOG_LEVEL = 'error';
+process.env.TZ = 'Asia/Tokyo';
+const originalConsoleLog = console.log;
+const originalConsoleWarn = console.warn;
+const originalConsoleError = console.error;
+beforeEach(() => {
+    jest.clearAllMocks();
+});
+afterEach(() => {
+    jest.clearAllTimers();
+});
+afterAll(() => {
+    console.log = originalConsoleLog;
+    console.warn = originalConsoleWarn;
+    console.error = originalConsoleError;
+});
+expect.extend({
+    toBeValidDate(received) {
+        const pass = received instanceof Date && !isNaN(received.getTime());
+        return {
+            message: () => `expected ${received} to be a valid Date object`,
+            pass,
+        };
+    },
+    toBeValidJobData(received) {
+        const pass = typeof received === 'object' &&
+            received !== null &&
+            'id' in received &&
+            'title' in received &&
+            'budget' in received &&
+            typeof received.id === 'string' &&
+            typeof received.title === 'string' &&
+            typeof received.budget === 'number';
+        return {
+            message: () => `expected ${JSON.stringify(received)} to be valid job data`,
+            pass,
+        };
+    },
+});
+//# sourceMappingURL=setup.js.map
+</file>
+
 <file path="test/setup.ts">
 import 'jest';
 
@@ -1637,83 +1007,128 @@ expect.extend({
 });
 </file>
 
-<file path="tsconfig.json">
+<file path="tsconfig.cdk.json">
 {
+    "extends": "./tsconfig.json",
     "compilerOptions": {
-        "target": "ES2022",
-        "module": "commonjs",
-        "lib": [
-            "ES2022"
-        ],
-        "outDir": "./dist",
-        "rootDir": "./src",
-        "removeComments": true,
-        "declaration": true,
-        "declarationMap": true,
-        "sourceMap": true,
-        "strict": true,
-        "noImplicitAny": true,
-        "strictNullChecks": true,
-        "strictFunctionTypes": true,
-        "strictBindCallApply": true,
-        "strictPropertyInitialization": true,
-        "noImplicitReturns": true,
-        "noFallthroughCasesInSwitch": true,
-        "noUncheckedIndexedAccess": true,
-        "noImplicitOverride": true,
-        "exactOptionalPropertyTypes": true,
-        "noPropertyAccessFromIndexSignature": true,
-        "noUnusedLocals": true,
-        "noUnusedParameters": true,
-        "allowUnreachableCode": false,
-        "allowUnusedLabels": false,
-        "esModuleInterop": true,
-        "allowSyntheticDefaultImports": true,
-        "forceConsistentCasingInFileNames": true,
-        "moduleResolution": "node",
-        "resolveJsonModule": true,
-        "isolatedModules": true,
-        "skipLibCheck": true,
-        "experimentalDecorators": true,
-        "emitDecoratorMetadata": true,
-        "baseUrl": "./",
-        "paths": {
-            "@/*": [
-                "src/*"
-            ],
-            "@/types/*": [
-                "src/types/*"
-            ],
-            "@/services/*": [
-                "src/services/*"
-            ],
-            "@/utils/*": [
-                "src/utils/*"
-            ],
-            "@/infrastructure/*": [
-                "src/infrastructure/*"
-            ]
-        }
+        "rootDir": "./",
+        "outDir": "./cdk.out/build"
     },
     "include": [
-        "src/**/*",
-        "test/**/*"
+        "app.ts",
+        "src/infrastructure/**/*"
     ],
     "exclude": [
         "node_modules",
         "dist",
-        "cdk.out",
-        "*.js"
-    ],
-    "ts-node": {
-        "require": [
-            "tsconfig-paths/register"
-        ],
-        "compilerOptions": {
-            "module": "commonjs"
-        }
-    }
+        "test",
+        "**/*.test.ts",
+        "**/*.spec.ts"
+    ]
 }
+</file>
+
+<file path=".eslintrc.js">
+module.exports = {
+    parser: '@typescript-eslint/parser',
+    parserOptions: {
+        ecmaVersion: 2022,
+        sourceType: 'module',
+    },
+    plugins: [
+        '@typescript-eslint'
+    ],
+    extends: [
+        'eslint:recommended'
+    ],
+    env: {
+        node: true,
+        es2022: true
+    },
+    rules: {
+        // any型を厳格に禁止
+        '@typescript-eslint/no-explicit-any': 'error',
+        '@typescript-eslint/no-unused-vars': ['error', {
+            argsIgnorePattern: '^_',
+            varsIgnorePattern: '^_'
+        }],
+
+        // General rules
+        'no-console': 'warn',
+        'no-debugger': 'error',
+        'prefer-const': 'error',
+        'no-var': 'error'
+    },
+    ignorePatterns: [
+        'dist/',
+        'node_modules/',
+        'cdk.out/',
+        '*.js',
+        '*.d.ts'
+    ]
+};
+</file>
+
+<file path=".gitignore">
+# Dependencies
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+yarn.lock
+
+# Build outputs
+dist/
+build/
+*.tsbuildinfo
+
+# TypeScript
+*.d.ts
+*.d.ts.map
+*.js.map
+
+# AWS CDK
+cdk.out/
+cdk.context.json
+
+# Environment variables
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+logs/
+*.log
+
+# Coverage
+coverage/
+.nyc_output/
+
+# Jest
+jest_0/
+
+# Temporary files
+tmp/
+temp/
+
+# Docker
+.dockerignore
+
+# Husky
+.husky/_/
 </file>
 
 <file path="docs/03_data_design.md">
@@ -3211,6 +2626,228 @@ const isRetryableError = (errorCode: APIErrorCode): boolean => {
   ].includes(errorCode);
 };
 ```
+</file>
+
+<file path="jest.config.js">
+module.exports = {
+    // テスト環境
+    preset: 'ts-jest',
+    testEnvironment: 'node',
+
+    // TypeScript設定
+    transform: {
+        '^.+\\.tsx?$': ['ts-jest', {
+            tsconfig: './tsconfig.json'
+        }]
+    },
+
+    // ファイル拡張子の設定
+    moduleFileExtensions: ['ts', 'tsx', 'js', 'jsx', 'json'],
+
+    // パスマッピング（tsconfig.jsonと同期）
+    moduleNameMapper: {
+        '^@/(.*)$': '<rootDir>/src/$1',
+        '^@/types/(.*)$': '<rootDir>/src/types/$1',
+        '^@/services/(.*)$': '<rootDir>/src/services/$1',
+        '^@/utils/(.*)$': '<rootDir>/src/utils/$1',
+        '^@/infrastructure/(.*)$': '<rootDir>/src/infrastructure/$1'
+    },
+
+    // テストファイルのパターン
+    testMatch: [
+        '<rootDir>/src/**/*.test.(ts|tsx)',
+        '<rootDir>/src/**/*.spec.(ts|tsx)',
+        '<rootDir>/test/**/*.test.(ts|tsx)',
+        '<rootDir>/test/**/*.spec.(ts|tsx)'
+    ],
+
+    // カバレッジ設定
+    collectCoverage: false, // デフォルトでは無効（npm run test:coverageで有効）
+    collectCoverageFrom: [
+        'src/**/*.{ts,tsx}',
+        '!src/**/*.d.ts',
+        '!src/**/*.test.{ts,tsx}',
+        '!src/**/*.spec.{ts,tsx}',
+        '!src/test/**/*',
+        '!src/types/**/*', // 型定義はカバレッジから除外
+    ],
+    coverageDirectory: 'coverage',
+    coverageReporters: ['text', 'lcov', 'html'],
+    coverageThreshold: {
+        global: {
+            branches: 75,
+            functions: 80,
+            lines: 80,
+            statements: 80
+        }
+    },
+
+    // セットアップファイル
+    setupFilesAfterEnv: ['<rootDir>/test/setup.ts'],
+
+    // モック設定
+    clearMocks: true,
+    resetMocks: true,
+    restoreMocks: true,
+
+    // タイムアウト設定
+    testTimeout: 30000, // 30秒（AWS SDK呼び出しなど時間がかかる場合に対応）
+
+    // 並列実行設定
+    maxWorkers: '50%', // CPUコア数の50%で並列実行
+
+    // エラー表示設定
+    verbose: true,
+    errorOnDeprecated: true,
+
+    // 不要なログを抑制
+    silent: false,
+
+    // テスト実行前後のフック
+    globalSetup: undefined,
+    globalTeardown: undefined
+};
+</file>
+
+<file path="src/index.ts">
+/**
+ * CrowdWorks Search System - Main Entry Point
+ * Docker環境での開発用エントリーポイント
+ */
+
+import { ExecutionLog } from '@/types';
+
+// 環境変数の検証
+function validateEnvironment(): void {
+    const required = ['NODE_ENV', 'AWS_REGION'];
+    const missing = required.filter(key => !process.env[key]);
+
+    if (missing.length > 0) {
+        throw new Error(`Missing required environment variables: ${missing.join(', ')}`);
+    }
+}
+
+// メイン実行関数
+async function main(): Promise<void> {
+    try {
+        validateEnvironment();
+
+        const log: ExecutionLog = {
+            executionId: Date.now().toString(),
+            timestamp: new Date().toISOString(),
+            status: 'success',
+            duration: 0,
+            jobsScraped: 0,
+            newJobs: 0,
+            aiEvaluated: 0,
+            highScoreJobs: 0,
+            costEstimate: 0,
+        };
+
+        console.log('🚀 CrowdWorks Search System - Development Mode');
+        console.log(`Environment: ${process.env['NODE_ENV']}`);
+        console.log(`AWS Region: ${process.env['AWS_REGION']}`);
+        console.log(`Execution ID: ${log.executionId}`);
+
+        // TODO: 実際の処理を実装
+        console.log('✅ Development setup completed');
+
+    } catch (error) {
+        console.error('❌ Failed to start application:', error);
+        process.exit(1);
+    }
+}
+
+// 開発環境でのみ実行
+if (require.main === module) {
+    main().catch(error => {
+        console.error('Fatal error:', error);
+        process.exit(1);
+    });
+}
+
+export { main };
+</file>
+
+<file path="Dockerfile">
+# Lambda環境に近いAmazon Linux 2ベース（Node.js 18）
+FROM public.ecr.aws/lambda/nodejs:18 as base
+
+# 開発ツールをインストール
+USER root
+
+# 必要なシステムパッケージのインストール
+RUN yum update -y && \
+    yum install -y \
+    git \
+    tar \
+    gzip \
+    unzip \
+    which \
+    procps \
+    chromium \
+    && yum clean all
+
+# AWS CLIのインストール
+RUN curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip" && \
+    unzip awscliv2.zip && \
+    ./aws/install && \
+    rm -rf awscliv2.zip aws
+
+# AWS CDKのインストール
+RUN npm install -g aws-cdk@latest
+
+# 作業ディレクトリの設定
+WORKDIR /workspace
+
+# package.jsonとpackage-lock.jsonをコピー
+COPY package*.json ./
+
+# 依存関係のインストール
+RUN npm ci
+
+# Playwrightの設定（Chromiumは既にインストール済み）
+ENV PLAYWRIGHT_BROWSERS_PATH=/usr/bin
+ENV PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1
+
+# === 開発用ステージ ===
+FROM base as development
+
+# ソースコードをコピー
+COPY . .
+
+# TypeScriptのビルド
+RUN npm run build
+
+# 開発用のデフォルトコマンド
+CMD ["npm", "run", "dev"]
+
+# === テスト用ステージ ===
+FROM base as test
+
+# ソースコードをコピー
+COPY . .
+
+# TypeScriptのビルド
+RUN npm run build
+
+# テスト実行
+CMD ["npm", "test"]
+
+# === 本番用ステージ ===
+FROM base as production
+
+# 本番用の依存関係のみインストール
+RUN npm ci --only=production
+
+# ソースコードをコピー
+COPY . .
+
+# TypeScriptのビルド
+RUN npm run build
+
+# 本番用のデフォルトコマンド
+CMD ["npm", "start"]
 </file>
 
 <file path="docs/01_requirements.md">
@@ -5167,6 +4804,474 @@ interface MVPCriteria {
 ```
 
 この実装計画書により、S3ベース設計とコスト制約$5/月を満たしながら、段階的かつ確実にシステムを構築できる具体的な道筋が示されました。
+</file>
+
+<file path="package.json">
+{
+    "name": "crowdworks-search",
+    "version": "1.0.0",
+    "description": "クラウドワークス案件自動検索・評価システム",
+    "main": "dist/index.js",
+    "scripts": {
+        "build": "tsc",
+        "build:watch": "tsc --watch",
+        "clean": "rimraf dist",
+        "lint": "eslint src --ext .ts",
+        "lint:fix": "eslint src --ext .ts --fix",
+        "format": "prettier --write src/**/*.ts",
+        "type-check": "tsc --noEmit",
+        "test": "jest",
+        "test:watch": "jest --watch",
+        "test:coverage": "jest --coverage",
+        "test:integration": "jest --testPathPattern=integration",
+        "test:e2e": "jest --testPathPattern=e2e",
+        "cdk:synth": "tsc -p tsconfig.cdk.json && cdk synth",
+        "cdk:deploy": "cdk deploy --require-approval never",
+        "cdk:destroy": "cdk destroy --force",
+        "cdk:diff": "tsc -p tsconfig.cdk.json && cdk diff",
+        "dev": "ts-node src/index.ts",
+        "start": "node dist/index.js",
+        "prepare": "husky install"
+    },
+    "keywords": [
+        "crowdworks",
+        "automation",
+        "scraping",
+        "aws",
+        "serverless",
+        "typescript"
+    ],
+    "author": "Your Name",
+    "license": "MIT",
+    "private": true,
+    "engines": {
+        "node": ">=18.0.0",
+        "npm": ">=8.0.0"
+    },
+    "dependencies": {
+        "@aws-sdk/client-lambda": "^3.450.0",
+        "@aws-sdk/client-s3": "^3.450.0",
+        "@aws-sdk/client-sns": "^3.450.0",
+        "@aws-sdk/client-ssm": "^3.450.0",
+        "aws-cdk-lib": "^2.110.0",
+        "aws-sdk": "^2.1490.0",
+        "constructs": "^10.3.0",
+        "openai": "^4.20.0",
+        "playwright": "^1.40.0",
+        "source-map-support": "^0.5.21",
+        "zod": "^3.22.0"
+    },
+    "devDependencies": {
+        "@types/aws-lambda": "^8.10.0",
+        "@types/jest": "^29.5.0",
+        "@types/node": "^20.8.0",
+        "@typescript-eslint/eslint-plugin": "^6.21.0",
+        "@typescript-eslint/parser": "^6.21.0",
+        "aws-cdk": "^2.110.0",
+        "aws-sdk-client-mock": "^3.0.0",
+        "eslint": "^8.51.0",
+        "eslint-config-prettier": "^9.0.0",
+        "eslint-plugin-import": "^2.28.0",
+        "eslint-plugin-jest": "^27.4.0",
+        "husky": "^8.0.0",
+        "jest": "^29.7.0",
+        "lint-staged": "^15.0.0",
+        "nock": "^13.3.0",
+        "prettier": "^3.0.0",
+        "rimraf": "^5.0.0",
+        "ts-jest": "^29.1.0",
+        "ts-node": "^10.9.0",
+        "tsconfig-paths": "^4.2.0",
+        "typescript": "^5.2.0"
+    },
+    "husky": {
+        "hooks": {
+            "pre-commit": "lint-staged",
+            "pre-push": "npm run type-check && npm run test"
+        }
+    },
+    "lint-staged": {
+        "src/**/*.{ts,tsx}": [
+            "eslint --fix",
+            "prettier --write",
+            "git add"
+        ]
+    }
+}
+</file>
+
+<file path="tsconfig.json">
+{
+    "compilerOptions": {
+        "target": "ES2022",
+        "module": "commonjs",
+        "lib": [
+            "ES2022"
+        ],
+        "rootDir": "./src",
+        "outDir": "./dist",
+        "removeComments": true,
+        "declaration": true,
+        "declarationMap": true,
+        "sourceMap": true,
+        "strict": true,
+        "noImplicitAny": true,
+        "strictNullChecks": true,
+        "strictFunctionTypes": true,
+        "strictBindCallApply": true,
+        "strictPropertyInitialization": true,
+        "noImplicitReturns": true,
+        "noFallthroughCasesInSwitch": true,
+        "noUncheckedIndexedAccess": true,
+        "noImplicitOverride": true,
+        "exactOptionalPropertyTypes": true,
+        "noPropertyAccessFromIndexSignature": true,
+        "noUnusedLocals": true,
+        "noUnusedParameters": true,
+        "allowUnreachableCode": false,
+        "allowUnusedLabels": false,
+        "esModuleInterop": true,
+        "allowSyntheticDefaultImports": true,
+        "forceConsistentCasingInFileNames": true,
+        "moduleResolution": "node",
+        "resolveJsonModule": true,
+        "isolatedModules": true,
+        "skipLibCheck": true,
+        "experimentalDecorators": true,
+        "emitDecoratorMetadata": true,
+        "baseUrl": "./",
+        "paths": {
+            "@/*": [
+                "src/*"
+            ],
+            "@/types/*": [
+                "src/types/*"
+            ],
+            "@/services/*": [
+                "src/services/*"
+            ],
+            "@/utils/*": [
+                "src/utils/*"
+            ],
+            "@/infrastructure/*": [
+                "src/infrastructure/*"
+            ]
+        }
+    },
+    "include": [
+        "src/**/*"
+    ],
+    "exclude": [
+        "node_modules",
+        "dist",
+        "cdk.out",
+        "test",
+        "**/*.test.ts",
+        "**/*.spec.ts",
+        "*.js"
+    ],
+    "ts-node": {
+        "require": [
+            "tsconfig-paths/register"
+        ],
+        "compilerOptions": {
+            "module": "commonjs"
+        }
+    }
+}
+</file>
+
+<file path=".github/workflows/ci.yml">
+name: CI/CD Pipeline
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+  workflow_dispatch: # 手動実行を許可
+
+env:
+  NODE_VERSION: '18'
+  AWS_REGION: 'ap-northeast-1'
+
+jobs:
+  # コード品質チェック（最速実行）
+  code-quality:
+    name: Code Quality Check
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Lint check
+        run: npm run lint
+
+      - name: Format check
+        run: npm run format -- --check
+
+      - name: TypeScript type check
+        run: npm run type-check
+
+  # 単体テスト（Docker環境）
+  unit-tests:
+    name: Unit Tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    needs: code-quality
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Build Docker image for testing
+        run: |
+          docker build --target test -t crowdworks-searcher:test .
+
+      - name: Run unit tests in Docker
+        run: |
+          docker run --rm crowdworks-searcher:test
+
+      - name: Upload coverage reports
+        uses: codecov/codecov-action@v3
+        if: always()
+        with:
+          file: ./coverage/lcov.info
+          flags: unittests
+          name: codecov-umbrella
+
+  # ビルドテスト
+  build-test:
+    name: Build Test
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    needs: code-quality
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build TypeScript
+        run: npm run build
+
+      - name: Debug build output
+        run: |
+          echo "=== Checking build output ==="
+          ls -la dist/ || echo "dist directory not found"
+          find . -name "*.js" -type f | head -10
+          
+      - name: Verify build output
+        run: |
+          if [ ! -d "dist" ]; then
+            echo "Build failed: dist directory not found"
+            exit 1
+          fi
+          if [ ! -f "dist/index.js" ]; then
+            echo "Build failed: main output file not found"
+            echo "Contents of dist directory:"
+            ls -la dist/
+            exit 1
+          fi
+          echo "✅ Build verification passed"
+
+  # CDK構文チェック
+  cdk-synth:
+    name: CDK Synth Check
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    needs: code-quality
+    if: github.event_name == 'push' || github.event_name == 'pull_request'
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build TypeScript
+        run: npm run build
+
+      - name: CDK Synth (dry-run)
+        run: npm run cdk:synth
+        env:
+          CDK_DEFAULT_REGION: ${{ env.AWS_REGION }}
+
+  # セキュリティスキャン
+  security-scan:
+    name: Security Scan
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    needs: code-quality
+    if: github.event_name == 'push'
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Run npm audit
+        run: npm audit --audit-level=high
+        continue-on-error: true
+
+      - name: Run CodeQL Analysis
+        uses: github/codeql-action/init@v2
+        with:
+          languages: javascript
+
+      - name: Perform CodeQL Analysis
+        uses: github/codeql-action/analyze@v2
+
+  # 統合テスト（Docker環境）
+  integration-tests:
+    name: Integration Tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    needs: [unit-tests, build-test]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Build test environment
+        run: |
+          docker-compose build test
+
+      - name: Run integration tests
+        run: |
+          docker-compose --profile test run --rm test npm run test:integration
+
+  # Staging環境デプロイ
+  deploy-staging:
+    name: Deploy to Staging
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    needs: [unit-tests, build-test, cdk-synth]
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.STAGING_AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.STAGING_AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build application
+        run: npm run build
+
+      - name: Deploy to staging
+        run: |
+          npm run cdk:deploy -- --require-approval never --context stage=staging
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          CROWDWORKS_EMAIL: ${{ secrets.CROWDWORKS_EMAIL }}
+          CROWDWORKS_PASSWORD: ${{ secrets.CROWDWORKS_PASSWORD }}
+
+      - name: Run smoke tests
+        run: |
+          # 基本的なヘルスチェック
+          echo "🧪 Running staging smoke tests..."
+          # TODO: 実際のスモークテストを実装
+
+  # Production環境デプロイ（手動承認）
+  deploy-production:
+    name: Deploy to Production
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    needs: [deploy-staging, integration-tests]
+    if: startsWith(github.ref, 'refs/tags/v')
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.PRODUCTION_AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.PRODUCTION_AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build application
+        run: npm run build
+
+      - name: Deploy to production
+        run: |
+          npm run cdk:deploy -- --require-approval never --context stage=production
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          CROWDWORKS_EMAIL: ${{ secrets.CROWDWORKS_EMAIL }}
+          CROWDWORKS_PASSWORD: ${{ secrets.CROWDWORKS_PASSWORD }}
+
+      - name: Post-deployment verification
+        run: |
+          echo "🚀 Production deployment completed"
+          echo "Tag: ${{ github.ref }}"
+          echo "Commit: ${{ github.sha }}"
+
+  # 通知（失敗時のみ）
+  notify-failure:
+    name: Notify Failure
+    runs-on: ubuntu-latest
+    needs: [code-quality, unit-tests, build-test, cdk-synth]
+    if: failure()
+    
+    steps:
+      - name: Notify failure
+        run: |
+          echo "❌ CI/CD Pipeline failed"
+          echo "Branch: ${{ github.ref }}"
+          echo "Commit: ${{ github.sha }}"
+          echo "Actor: ${{ github.actor }}"
+          # TODO: Slack通知などを実装
 </file>
 
 <file path="readme.md">

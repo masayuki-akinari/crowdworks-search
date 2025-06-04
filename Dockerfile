@@ -1,78 +1,91 @@
-# Lambda環境に近いAmazon Linux 2ベース（Node.js 18）
-FROM public.ecr.aws/lambda/nodejs:18 as base
-
-# 開発ツールをインストール
-USER root
+# ベースイメージ
+FROM node:18-alpine as base
 
 # 必要なシステムパッケージのインストール
-RUN yum update -y && \
-    yum install -y \
+RUN apk add --no-cache \
     git \
-    tar \
-    gzip \
-    unzip \
-    which \
-    procps \
+    python3 \
+    make \
+    g++ \
     chromium \
-    && yum clean all
-
-# AWS CLIのインストール
-RUN curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip" && \
-    unzip awscliv2.zip && \
-    ./aws/install && \
-    rm -rf awscliv2.zip aws
-
-# AWS CDKのインストール
-RUN npm install -g aws-cdk@latest
+    && rm -rf /var/cache/apk/*
 
 # 作業ディレクトリの設定
-WORKDIR /workspace
+WORKDIR /app
 
-# package.jsonとpackage-lock.jsonをコピー
+# package.jsonとpackage-lock.jsonをコピー（依存関係キャッシュ用）
 COPY package*.json ./
 
-# 依存関係のインストール
+# === 依存関係インストールステージ ===
+FROM base as dependencies
+
+# 全ての依存関係をインストール
 RUN npm ci
 
-# Playwrightの設定（Chromiumは既にインストール済み）
-ENV PLAYWRIGHT_BROWSERS_PATH=/usr/bin
-ENV PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1
-
-# === 開発用ステージ ===
-FROM base as development
+# === ビルドステージ ===
+FROM dependencies as build
 
 # ソースコードをコピー
 COPY . .
 
 # TypeScriptのビルド
 RUN npm run build
+
+# 不要なdevDependenciesを削除
+RUN npm prune --production
+
+# === テスト用ステージ ===
+FROM dependencies as test
+
+# ソースコードをコピー
+COPY . .
+
+# TypeScriptのビルド（テスト用）
+RUN npm run build
+
+# Playwrightの設定
+ENV PLAYWRIGHT_BROWSERS_PATH=/usr/bin/chromium-browser
+ENV PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1
+
+# テスト実行
+CMD ["npm", "run", "test:coverage"]
+
+# === 開発用ステージ ===
+FROM dependencies as development
+
+# ソースコードをコピー
+COPY . .
+
+# 開発用のポート公開
+EXPOSE 3000 9229
 
 # 開発用のデフォルトコマンド
 CMD ["npm", "run", "dev"]
 
-# === テスト用ステージ ===
-FROM base as test
-
-# ソースコードをコピー
-COPY . .
-
-# TypeScriptのビルド
-RUN npm run build
-
-# テスト実行
-CMD ["npm", "test"]
-
 # === 本番用ステージ ===
-FROM base as production
+FROM node:18-alpine as production
 
-# 本番用の依存関係のみインストール
-RUN npm ci --only=production
+# 作業ディレクトリの設定
+WORKDIR /app
 
-# ソースコードをコピー
-COPY . .
+# 本番用の最小限のパッケージのみインストール
+RUN apk add --no-cache dumb-init
 
-# TypeScriptのビルド
-RUN npm run build
+# 非rootユーザーの作成
+RUN addgroup -g 1001 -S nodejs && \
+    adduser -S nextjs -u 1001
+
+# ビルド成果物と本番用依存関係をコピー
+COPY --from=build --chown=nextjs:nodejs /app/dist ./dist
+COPY --from=build --chown=nextjs:nodejs /app/node_modules ./node_modules
+COPY --from=build --chown=nextjs:nodejs /app/package.json ./package.json
+
+# 非rootユーザーに切り替え
+USER nextjs
+
+# ヘルスチェック追加
+HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
+    CMD node --version || exit 1
 
 # 本番用のデフォルトコマンド
-CMD ["npm", "start"] 
+CMD ["dumb-init", "node", "dist/index.js"] 
