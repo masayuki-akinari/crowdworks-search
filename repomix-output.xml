@@ -45,6 +45,7 @@ The content is organized as follows:
 .gitignore
 .prettierrc
 app.ts
+basic-scraping-dump.json
 cdk.json
 docker-compose.yml
 Dockerfile
@@ -58,6 +59,7 @@ docs/CI_CD_SETUP.md
 docs/README.md
 env.example
 jest.config.js
+job-detail-dump.json
 package.json
 README-setup.md
 readme.md
@@ -65,7 +67,15 @@ src/index.ts
 src/infrastructure/crowdworks-searcher-stack.ts
 src/lambda/handler.ts
 src/services/index.ts
+src/test/basic-scraping-test.ts
 src/test/crowdworks-scraping-test.ts
+src/test/data-dump-test.ts
+src/test/detail-test.ts
+src/test/direct-detail-test.ts
+src/test/lambda-handler-test.ts
+src/test/main-handler-test.ts
+src/test/new-detail-test.ts
+src/test/simple-test.ts
 src/types/index.ts
 src/utils/index.ts
 test/sample.test.js
@@ -78,6 +88,462 @@ tsconfig.json
 
 <files>
 This section contains the contents of the repository's files.
+
+<file path="basic-scraping-dump.json">
+{
+  "success": false,
+  "error": "browserContext.close: Target page, context or browser has been closed",
+  "executionTime": 3678
+}
+</file>
+
+<file path="job-detail-dump.json">
+{
+  "jobId": "12131254",
+  "title": "クラウドソーシング・仕事依頼・求人情報は日本最大級のクラウドワークス",
+  "url": "https://crowdworks.jp/public/jobs/12131254",
+  "category": "ウェブデザインの仕事・求人",
+  "paymentType": "固定報酬制",
+  "budget": "250,000円  〜  300,000円",
+  "postDate": "2025年05月28日",
+  "deliveryDate": "",
+  "applicationDeadline": "2025年06月11日",
+  "desiredImages": [],
+  "applicantCount": 86,
+  "contractCount": 72,
+  "recruitmentCount": 220,
+  "favoriteCount": 77,
+  "client": {
+    "name": "anke7562",
+    "url": "https://crowdworks.jp/public/employers/6110822",
+    "overallRating": "5.0",
+    "orderHistory": "2件",
+    "completionRate": "94%",
+    "thankCount": "",
+    "identityVerified": false,
+    "orderRuleCheck": false,
+    "description": ""
+  },
+  "detailedDescription": "※初心者歓迎、大量採用中です！【 概要 】今回、WEBデザイン講義のコンテンツ改善のため、その感想をいただくお仕事の募集です。特にWEBデザイナー初心者さんにとっては、純粋に、スキルアップにもつながり、お仕事の実績にもなりますので、ぜひお気軽にご応募ください！（しっかりお仕事いただいた方には、全員、星５つの高評価をつけさせていただいております！）【 依頼内容 】・WEBデザイン講義に関するクライアントの指定のコンテンツをご覧いただきます。（案件獲得方法やスキルUPの仕方、上手くいく人の特徴などですので、講義として、かなり役立つかと思います）・ご覧頂いた後、その感想(50文字以上)を回答していただきます。　※講義の感想は50文字以上で、回答を頂いてからの報酬発生となります。・ネガティブ、否定的な内容は承認できません。必ず、前向きな意見や感想をお願い致します。・トータル20分もあれば終了すると思います。・重複のご応募はおやめください。その場合は、非承認とさせていただきます。【 納期 】　・契約締結後、3日以内にご対応をお願いします。【 契約金額(税抜) 】1件100円（税込）※契約金額（税込）からシステム利用料を差し引いた金額が、ワーカーさまの受取金額となります※源泉徴収は対応できませんのでご了承ください。※100円以上の金額では契約できないことご了承下さい。→報酬以上に価値のあるWEBデザインの講義内容になっているかと思いますので、初心者さんは、ぜひ楽しみにどうぞ！また、継続依頼も可能です！お気軽にご応募ください！【 応募方法 】以下のフォーマットに沿って、ご応募ください。1.年齢2.性別3.WEBデザイナー歴※初心者歓迎で、大量採用中です！その他ご質問等ありましたら、気軽にお問い合わせください。ご応募をお待ちしております！",
+  "recentApplicants": [
+    {
+      "name": "3444fl",
+      "applicationDate": "2025/06/04 22:13",
+      "url": ""
+    },
+    {
+      "name": "cgkmiih",
+      "applicationDate": "2025/06/04 21:45",
+      "url": ""
+    },
+    {
+      "name": "Y..MiYAZAKi",
+      "applicationDate": "2025/06/04 18:54",
+      "url": ""
+    },
+    {
+      "name": "kagetora1225",
+      "applicationDate": "2025/06/04 17:46",
+      "url": ""
+    },
+    {
+      "name": "kenken4226",
+      "applicationDate": "2025/06/04 17:43",
+      "url": ""
+    },
+    {
+      "name": "rurururu816",
+      "applicationDate": "2025/06/04 17:33",
+      "url": ""
+    },
+    {
+      "name": "parfait2933",
+      "applicationDate": "2025/06/04 17:11",
+      "url": ""
+    },
+    {
+      "name": "tomori9",
+      "applicationDate": "2025/06/04 13:01",
+      "url": ""
+    },
+    {
+      "name": "a.snk",
+      "applicationDate": "2025/06/04 10:52",
+      "url": ""
+    },
+    {
+      "name": "mothita",
+      "applicationDate": "2025/06/04 08:10",
+      "url": ""
+    },
+    {
+      "name": "甲斐正英",
+      "applicationDate": "2025/06/04 05:34",
+      "url": ""
+    },
+    {
+      "name": "mt02bloom",
+      "applicationDate": "2025/06/04 02:28",
+      "url": ""
+    },
+    {
+      "name": "ecodama",
+      "applicationDate": "2025/06/04 00:26",
+      "url": ""
+    },
+    {
+      "name": "friendshipmk731",
+      "applicationDate": "2025/06/03 21:37",
+      "url": ""
+    },
+    {
+      "name": "ゆう茶々",
+      "applicationDate": "2025/06/03 20:34",
+      "url": ""
+    },
+    {
+      "name": "よしりこ",
+      "applicationDate": "2025/06/03 20:09",
+      "url": ""
+    },
+    {
+      "name": "hyuto_cw",
+      "applicationDate": "2025/06/03 19:41",
+      "url": ""
+    },
+    {
+      "name": "hqrvkqs2",
+      "applicationDate": "2025/06/03 18:09",
+      "url": ""
+    },
+    {
+      "name": "野木茉那",
+      "applicationDate": "2025/06/03 18:08",
+      "url": ""
+    },
+    {
+      "name": "Tanaka037",
+      "applicationDate": "2025/06/03 17:46",
+      "url": ""
+    }
+  ],
+  "scrapedAt": "2025-06-04T18:44:39.137Z"
+}
+</file>
+
+<file path="src/test/basic-scraping-test.ts">
+import { testCrowdWorksScraping } from '../lambda/handler';
+import dotenv from 'dotenv';
+import * as fs from 'fs';
+
+dotenv.config();
+
+async function basicScrapingTest() {
+    console.log('🚀 CrowdWorks基本スクレイピングテスト開始...');
+
+    try {
+        // 基本的な案件スクレイピングテストを実行
+        const result = await testCrowdWorksScraping();
+
+        console.log('\n📊 === 基本スクレイピング結果 ===');
+        console.log('取得した結果をJSONで出力します...\n');
+
+        // 結果をJSONで出力
+        const jsonData = JSON.stringify(result, null, 2);
+        console.log(jsonData);
+
+        // ファイルにも保存
+        const outputPath = './basic-scraping-dump.json';
+        fs.writeFileSync(outputPath, jsonData, 'utf8');
+        console.log(`\n💾 データをファイルに保存しました: ${outputPath}`);
+
+        // サマリー表示
+        console.log('\n📋 === スクレイピングサマリー ===');
+        console.log(`✅ テスト成功: ${result.success ? 'はい' : 'いいえ'}`);
+        console.log(`⏱️ 実行時間: ${result.executionTime}ms`);
+
+        if (result.scrapingResult) {
+            console.log(`📊 案件発見数: ${result.scrapingResult.jobsFound}件`);
+            console.log(`📈 案件取得成功: ${result.scrapingResult.success ? 'はい' : 'いいえ'}`);
+            console.log(`⏱️ スクレイピング時間: ${result.scrapingResult.executionTime}ms`);
+
+            if (result.scrapingResult.jobs && result.scrapingResult.jobs.length > 0) {
+                console.log('\n📝 取得した案件（上位5件）:');
+                result.scrapingResult.jobs.slice(0, 5).forEach((job, i) => {
+                    console.log(`\n   ${i + 1}. ${job.title}`);
+                    console.log(`      💰 予算: ${job.budget.type} ${job.budget.amount}円`);
+                    console.log(`      🏢 クライアント: ${job.client.name} (評価: ${job.client.rating}/5)`);
+                    console.log(`      📂 カテゴリ: ${job.category}`);
+                    console.log(`      🏷️ タグ: ${job.tags.join(', ')}`);
+                    console.log(`      📅 掲載日: ${job.postedAt}`);
+                    console.log(`      👥 応募者: ${job.applicants}人`);
+                    console.log(`      🔗 URL: ${job.url}`);
+                });
+            }
+        }
+
+        if (result.error) {
+            console.log(`\n❌ エラー: ${result.error}`);
+        }
+
+    } catch (error) {
+        console.error('❌ テストエラー:', error);
+        const errorData = {
+            success: false,
+            error: error instanceof Error ? error.message : String(error),
+            timestamp: new Date().toISOString()
+        };
+
+        const errorJsonData = JSON.stringify(errorData, null, 2);
+        console.log('\n💥 エラーデータ:');
+        console.log(errorJsonData);
+
+        const errorOutputPath = './basic-scraping-error.json';
+        fs.writeFileSync(errorOutputPath, errorJsonData, 'utf8');
+        console.log(`\n💾 エラーデータを保存しました: ${errorOutputPath}`);
+    }
+
+    console.log('\n✅ 基本スクレイピングテスト完了！');
+}
+
+// テスト実行
+if (require.main === module) {
+    basicScrapingTest().catch((error) => {
+        console.error('❌ 基本テストエラー:', error);
+        process.exit(1);
+    });
+}
+</file>
+
+<file path="src/test/data-dump-test.ts">
+import { scrapeCrowdWorksJobDetail } from '../lambda/handler';
+import { chromium } from 'playwright';
+import dotenv from 'dotenv';
+import * as fs from 'fs';
+
+dotenv.config();
+
+async function dataDumpTest() {
+    console.log('🚀 CrowdWorks案件データダンプテスト開始...');
+
+    const browser = await chromium.launch({
+        headless: false,
+        devtools: false,
+        args: ['--start-maximized']
+    });
+
+    try {
+        const context = await browser.newContext({
+            userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+            viewport: { width: 1920, height: 1080 },
+        });
+
+        const page = await context.newPage();
+        const jobUrl = 'https://crowdworks.jp/public/jobs/12131254';
+
+        console.log(`📄 案件詳細ページアクセス: ${jobUrl}`);
+
+        // 実装した関数を使って詳細情報を取得
+        const jobDetail = await scrapeCrowdWorksJobDetail(page, jobUrl);
+
+        console.log('\n📊 === ハンドラー関数による抽出結果 ===');
+        console.log('取得した詳細情報をJSONで出力します...\n');
+
+        // 詳細情報をJSONで出力
+        const jsonData = JSON.stringify(jobDetail, null, 2);
+        console.log(jsonData);
+
+        // ファイルにも保存
+        const outputPath = './job-detail-dump.json';
+        fs.writeFileSync(outputPath, jsonData, 'utf8');
+        console.log(`\n💾 データをファイルに保存しました: ${outputPath}`);
+
+        // サマリー表示
+        console.log('\n📋 === データサマリー ===');
+        console.log(`🆔 案件ID: ${jobDetail.jobId}`);
+        console.log(`🏷️ タイトル: ${jobDetail.title}`);
+        console.log(`📂 カテゴリ: ${jobDetail.category}`);
+        console.log(`💰 支払いタイプ: ${jobDetail.paymentType}`);
+        console.log(`💵 予算: ${jobDetail.budget}`);
+        console.log(`📅 掲載日: ${jobDetail.postDate}`);
+        console.log(`⏰ 納期: ${jobDetail.deliveryDate}`);
+        console.log(`📬 応募期限: ${jobDetail.applicationDeadline}`);
+        console.log(`👥 応募者: ${jobDetail.applicantCount}人`);
+        console.log(`👤 契約済み: ${jobDetail.contractCount}人`);
+        console.log(`🎯 募集人数: ${jobDetail.recruitmentCount}人`);
+        console.log(`❤️ 気になる: ${jobDetail.favoriteCount}人`);
+        console.log(`🏢 クライアント: ${jobDetail.client.name}`);
+        console.log(`⭐ 評価: ${jobDetail.client.overallRating}`);
+        console.log(`📊 実績: ${jobDetail.client.orderHistory}`);
+        console.log(`✅ 完了率: ${jobDetail.client.completionRate}`);
+        console.log(`🔍 本人確認: ${jobDetail.client.identityVerified ? '済み' : '未確認'}`);
+        console.log(`👤 応募者数: ${jobDetail.recentApplicants.length}人`);
+
+        if (jobDetail.recentApplicants.length > 0) {
+            console.log(`\n👤 最新応募者（上位5名）:`);
+            jobDetail.recentApplicants.slice(0, 5).forEach((applicant, i) => {
+                console.log(`   ${i + 1}. ${applicant.name} (${applicant.applicationDate})`);
+            });
+        }
+
+        console.log(`\n📝 仕事内容（抜粋）:`);
+        console.log(jobDetail.detailedDescription.substring(0, 300) + '...');
+
+        console.log('\n⏱️ 3秒待機してからブラウザを閉じます...');
+        await page.waitForTimeout(3000);
+
+        await context.close();
+
+    } finally {
+        await browser.close();
+        console.log('🔒 ブラウザクリーンアップ完了');
+    }
+
+    console.log('✅ データダンプテスト完了！');
+}
+
+// テスト実行
+if (require.main === module) {
+    dataDumpTest().catch((error) => {
+        console.error('❌ テストエラー:', error);
+        process.exit(1);
+    });
+}
+</file>
+
+<file path="src/test/main-handler-test.ts">
+import { lambdaHandler } from '../lambda/handler';
+import dotenv from 'dotenv';
+import * as fs from 'fs';
+
+dotenv.config();
+
+async function mainHandlerTest() {
+    console.log('🚀 CrowdWorksメインハンドラーテスト開始...');
+
+    try {
+        // Lambdaハンドラーを実行
+        const result = await lambdaHandler(
+            {
+                source: 'aws.events',
+                'detail-type': 'Scheduled Event',
+                detail: {},
+                time: new Date().toISOString()
+            },
+            {} as any // Context（テスト時は空オブジェクト）
+        );
+
+        console.log('\n📊 === メインハンドラー実行結果 ===');
+        console.log('実行結果をJSONで出力します...\n');
+
+        // 結果をJSONで出力
+        const jsonData = JSON.stringify(result, null, 2);
+        console.log(jsonData);
+
+        // ファイルにも保存
+        const outputPath = './main-handler-dump.json';
+        fs.writeFileSync(outputPath, jsonData, 'utf8');
+        console.log(`\n💾 データをファイルに保存しました: ${outputPath}`);
+
+        // サマリー表示
+        console.log('\n📋 === 実行サマリー ===');
+        console.log(`🔢 ステータスコード: ${result.statusCode}`);
+        console.log(`⏱️ 実行時間: ${result.executionTime}ms`);
+        console.log(`📅 実行時刻: ${result.timestamp}`);
+
+        // レスポンスボディをパースして詳細表示
+        try {
+            const responseBody = JSON.parse(result.body);
+
+            if (responseBody.phases) {
+                console.log('\n🎯 === フェーズ別結果 ===');
+
+                // Phase 1: Playwright基本テスト
+                if (responseBody.phases.playwright) {
+                    const p1 = responseBody.phases.playwright;
+                    console.log(`📌 Phase 1 - Playwright: ${p1.success ? '✅' : '❌'}`);
+                    console.log(`   ⏱️ 実行時間: ${p1.executionTime}ms`);
+                    if (p1.title) console.log(`   📋 テストページタイトル: ${p1.title}`);
+                    if (p1.error) console.log(`   ❌ エラー: ${p1.error}`);
+                }
+
+                // Phase 2: CrowdWorksログインテスト
+                if (responseBody.phases.crowdworksLogin) {
+                    const p2 = responseBody.phases.crowdworksLogin;
+                    console.log(`📌 Phase 2 - ログイン: ${p2.success ? '✅' : '❌'}`);
+                    console.log(`   ⏱️ 実行時間: ${p2.executionTime}ms`);
+                    if (p2.loginResult) {
+                        console.log(`   🔐 ログイン成功: ${p2.loginResult.isLoggedIn ? '✅' : '❌'}`);
+                        if (p2.loginResult.error) {
+                            console.log(`   ❌ ログインエラー: ${p2.loginResult.error}`);
+                        }
+                    }
+                    if (p2.error) console.log(`   ❌ エラー: ${p2.error}`);
+                }
+
+                // Phase 3: 案件スクレイピングテスト
+                if (responseBody.phases.crowdworksScraping) {
+                    const p3 = responseBody.phases.crowdworksScraping;
+                    console.log(`📌 Phase 3 - スクレイピング: ${p3.success ? '✅' : '❌'}`);
+                    console.log(`   ⏱️ 実行時間: ${p3.executionTime}ms`);
+                    if (p3.scrapingResult) {
+                        console.log(`   📊 案件発見数: ${p3.scrapingResult.jobsFound}件`);
+                        console.log(`   📈 スクレイピング成功: ${p3.scrapingResult.success ? '✅' : '❌'}`);
+                    }
+                    if (p3.error) console.log(`   ❌ エラー: ${p3.error}`);
+                }
+
+                // Phase 4: カテゴリ別スクレイピングテスト
+                if (responseBody.phases.crowdworksCategories) {
+                    const p4 = responseBody.phases.crowdworksCategories;
+                    console.log(`📌 Phase 4 - カテゴリ別: ${p4.success ? '✅' : '❌'}`);
+                    console.log(`   ⏱️ 実行時間: ${p4.executionTime}ms`);
+                    if (p4.results) {
+                        console.log(`   📂 カテゴリ数: ${Object.keys(p4.results).length}個`);
+                        Object.entries(p4.results).forEach(([category, result]: [string, any]) => {
+                            console.log(`     - ${category}: ${result.success ? '✅' : '❌'} (${result.jobsFound}件)`);
+                        });
+                    }
+                    if (p4.error) console.log(`   ❌ エラー: ${p4.error}`);
+                }
+            }
+
+            console.log(`\n⏱️ 総実行時間: ${responseBody.executionTime}ms`);
+            console.log(`📅 タイムスタンプ: ${responseBody.timestamp}`);
+
+        } catch (parseError) {
+            console.log('\n⚠️ レスポンスボディのパースに失敗しました');
+            console.log('生のレスポンス:', result.body);
+        }
+
+    } catch (error) {
+        console.error('❌ メインハンドラーテストエラー:', error);
+        const errorData = {
+            success: false,
+            error: error instanceof Error ? error.message : String(error),
+            timestamp: new Date().toISOString()
+        };
+
+        const errorJsonData = JSON.stringify(errorData, null, 2);
+        console.log('\n💥 エラーデータ:');
+        console.log(errorJsonData);
+
+        const errorOutputPath = './main-handler-error.json';
+        fs.writeFileSync(errorOutputPath, errorJsonData, 'utf8');
+        console.log(`\n💾 エラーデータを保存しました: ${errorOutputPath}`);
+    }
+
+    console.log('\n✅ メインハンドラーテスト完了！');
+}
+
+// テスト実行
+if (require.main === module) {
+    mainHandlerTest().catch((error) => {
+        console.error('❌ メインテストエラー:', error);
+        process.exit(1);
+    });
+}
+</file>
 
 <file path=".prettierrc">
 {
@@ -364,6 +830,630 @@ CMD ["dist/lambda/handler.lambdaHandler"]
 | 日付 | 更新者 | 更新内容 |
 |------|--------|----------|
 |      |        |          |
+</file>
+
+<file path="src/test/detail-test.ts">
+import { scrapeCrowdWorksJobsByCategoryWithDetails } from '../lambda/handler';
+import dotenv from 'dotenv';
+
+// 環境変数読み込み
+dotenv.config();
+
+async function testJobDetails() {
+    console.log('🚀 CrowdWorks案件詳細取得テスト開始...');
+
+    try {
+        // web_productsカテゴリから案件詳細を取得
+        console.log('📊 案件詳細付きスクレイピング実行中...');
+
+        const result = await scrapeCrowdWorksJobsByCategoryWithDetails({
+            category: 'web_products',
+            maxJobs: 5,      // 案件一覧5件取得
+            maxDetails: 2    // そのうち2件の詳細を取得
+        });
+
+        console.log(`\n📋 取得結果:`);
+        console.log(`📊 案件一覧: ${result.jobs.length}件`);
+        console.log(`📄 詳細取得: ${result.jobDetails.length}件`);
+
+        // 案件一覧の情報を表示
+        if (result.jobs.length > 0) {
+            console.log('\n🔍 === 案件一覧情報 ===');
+            result.jobs.forEach((job, index) => {
+                console.log(`${index + 1}. ${job.title}`);
+                console.log(`   💰 予算: ${job.budget}`);
+                console.log(`   🏢 クライアント: ${job.client.name}`);
+                console.log(`   🔗 URL: ${job.url}`);
+                console.log('');
+            });
+        }
+
+        // 案件詳細情報を表示
+        if (result.jobDetails.length > 0) {
+            console.log('\n📄 === 案件詳細情報 ===');
+            result.jobDetails.forEach((detail, index) => {
+                console.log(`\n${index + 1}. ${detail.title}`);
+                console.log(`📊 案件ID: ${detail.jobId}`);
+                console.log(`🏷️ カテゴリ: ${detail.category}`);
+                console.log(`💰 支払い: ${detail.paymentType}`);
+                console.log(`💵 予算: ${detail.budget}`);
+                console.log(`📅 掲載日: ${detail.postDate}`);
+                console.log(`⏰ 納期: ${detail.deliveryDate}`);
+                console.log(`📬 応募期限: ${detail.applicationDeadline}`);
+
+                console.log(`\n👥 応募状況:`);
+                console.log(`   - 応募者: ${detail.applicantCount}人`);
+                console.log(`   - 契約済み: ${detail.contractCount}人`);
+                console.log(`   - 募集人数: ${detail.recruitmentCount}人`);
+                console.log(`   - 気になる: ${detail.favoriteCount}人`);
+
+                console.log(`\n🏢 クライアント情報:`);
+                console.log(`   - 名前: ${detail.client.name}`);
+                console.log(`   - 評価: ${detail.client.overallRating}`);
+                console.log(`   - 実績: ${detail.client.orderHistory}`);
+                console.log(`   - 完了率: ${detail.client.completionRate}`);
+                console.log(`   - 本人確認: ${detail.client.identityVerified ? '済み' : '未確認'}`);
+
+                if (detail.recentApplicants.length > 0) {
+                    console.log(`\n👤 最近の応募者:`);
+                    detail.recentApplicants.slice(0, 3).forEach((applicant, i) => {
+                        console.log(`   ${i + 1}. ${applicant.name} (${applicant.applicationDate})`);
+                    });
+                }
+
+                console.log(`\n📝 仕事内容: ${detail.detailedDescription.substring(0, 200)}...`);
+                console.log('─'.repeat(50));
+            });
+        }
+
+        console.log('\n✅ 案件詳細取得テスト完了！');
+
+    } catch (error) {
+        console.error('❌ 案件詳細取得エラー:', error);
+        process.exit(1);
+    }
+}
+
+// テスト実行
+if (require.main === module) {
+    testJobDetails().catch((error) => {
+        console.error('❌ メイン処理でエラーが発生しました:', error);
+        process.exit(1);
+    });
+}
+</file>
+
+<file path="src/test/direct-detail-test.ts">
+import { chromium } from 'playwright';
+import dotenv from 'dotenv';
+
+// 環境変数読み込み
+dotenv.config();
+
+async function testDirectJobDetail() {
+    console.log('🚀 CrowdWorks案件詳細直接取得テスト開始...');
+
+    const browser = await chromium.launch({
+        headless: false,
+        devtools: false,
+        args: ['--start-maximized']
+    });
+
+    try {
+        const context = await browser.newContext({
+            userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+            viewport: { width: 1920, height: 1080 },
+        });
+
+        const page = await context.newPage();
+
+        // 実際の案件詳細ページに直接アクセス
+        // 注意：実際の案件IDを使用（public案件のため問題なし）
+        const jobUrl = 'https://crowdworks.jp/public/jobs/12131254'; // MCPテストで使用した案件ID
+
+        console.log(`📄 案件詳細ページアクセス: ${jobUrl}`);
+        await page.goto(jobUrl, {
+            waitUntil: 'domcontentloaded',
+            timeout: 60000
+        });
+
+        await page.waitForTimeout(3000);
+
+        // ページタイトル確認
+        const title = await page.title();
+        console.log(`📋 ページタイトル: "${title}"`);
+
+        // MCPで確認した構造に基づいて詳細情報を抽出
+        const jobDetail = await page.evaluate(() => {
+            // タイトル取得
+            const titleElement = (globalThis as any).document.querySelector('h1');
+            const fullTitle = titleElement?.textContent?.trim() || '';
+            const cleanTitle = fullTitle.replace(/\s+(ウェブデザイン|アンケート|その他).*の仕事の依頼.*$/, '').trim();
+
+            // テーブル情報を抽出
+            const tables = (globalThis as any).document.querySelectorAll('table');
+            let paymentInfo = '';
+            let budget = '';
+            let postDate = '';
+            let deadline = '';
+            let applicantCount = 0;
+            let contractCount = 0;
+            let recruitmentCount = 0;
+            let favoriteCount = 0;
+
+            tables.forEach((table: any) => {
+                const rows = table.querySelectorAll('tr');
+                rows.forEach((row: any) => {
+                    const cells = row.querySelectorAll('td');
+                    if (cells.length >= 2) {
+                        const label = cells[0]?.textContent?.trim() || '';
+                        const value = cells[1]?.textContent?.trim() || '';
+
+                        if (label.includes('固定報酬制') || label.includes('時間単価制')) {
+                            paymentInfo = label;
+                            budget = value;
+                        } else if (label.includes('掲載日')) {
+                            postDate = value;
+                        } else if (label.includes('応募期限')) {
+                            deadline = value;
+                        } else if (label.includes('応募した人')) {
+                            applicantCount = parseInt(value.replace(/[^\d]/g, '')) || 0;
+                        } else if (label.includes('契約した人')) {
+                            contractCount = parseInt(value.replace(/[^\d]/g, '')) || 0;
+                        } else if (label.includes('募集人数')) {
+                            recruitmentCount = parseInt(value.replace(/[^\d]/g, '')) || 0;
+                        } else if (label.includes('気になる')) {
+                            favoriteCount = parseInt(value.replace(/[^\d]/g, '')) || 0;
+                        }
+                    }
+                });
+            });
+
+            // クライアント情報
+            const clientElement = (globalThis as any).document.querySelector('a[href*="/public/employers/"]');
+            const clientName = clientElement?.textContent?.trim() || '匿名';
+
+            // 評価情報
+            let rating = '';
+            const ratingElements = (globalThis as any).document.querySelectorAll('dd, definition');
+            ratingElements.forEach((el: any) => {
+                const text = el?.textContent?.trim() || '';
+                if (text.includes('.') && text.length < 5 && !rating) {
+                    rating = text;
+                }
+            });
+
+            // 詳細説明（最長のテーブルセル）
+            let description = '';
+            let maxLength = 0;
+            const descCells = (globalThis as any).document.querySelectorAll('td');
+            descCells.forEach((cell: any) => {
+                const text = cell?.textContent?.trim() || '';
+                if (text.length > maxLength && text.length > 100) {
+                    description = text;
+                    maxLength = text.length;
+                }
+            });
+
+            return {
+                title: cleanTitle,
+                paymentInfo,
+                budget,
+                postDate,
+                deadline,
+                applicantCount,
+                contractCount,
+                recruitmentCount,
+                favoriteCount,
+                clientName,
+                rating,
+                description: description.length > 500 ? description.substring(0, 500) + '...' : description
+            };
+        });
+
+        // 結果表示
+        console.log('\n📊 === 抽出された案件詳細情報 ===');
+        console.log(`🏷️ タイトル: ${jobDetail.title}`);
+        console.log(`💰 支払い形式: ${jobDetail.paymentInfo}`);
+        console.log(`💵 予算: ${jobDetail.budget}`);
+        console.log(`📅 掲載日: ${jobDetail.postDate}`);
+        console.log(`⏰ 応募期限: ${jobDetail.deadline}`);
+        console.log(`\n👥 応募状況:`);
+        console.log(`   - 応募者: ${jobDetail.applicantCount}人`);
+        console.log(`   - 契約済み: ${jobDetail.contractCount}人`);
+        console.log(`   - 募集人数: ${jobDetail.recruitmentCount}人`);
+        console.log(`   - 気になる: ${jobDetail.favoriteCount}人`);
+        console.log(`\n🏢 クライアント情報:`);
+        console.log(`   - 名前: ${jobDetail.clientName}`);
+        console.log(`   - 評価: ${jobDetail.rating}`);
+        console.log(`\n📝 仕事内容:`);
+        console.log(`${jobDetail.description}`);
+
+        console.log('\n⏱️ 10秒待機してからブラウザを閉じます...');
+        await page.waitForTimeout(10000);
+
+        await context.close();
+
+    } finally {
+        await browser.close();
+        console.log('🔒 ブラウザクリーンアップ完了');
+    }
+
+    console.log('✅ 案件詳細直接取得テスト完了！');
+}
+
+// テスト実行
+if (require.main === module) {
+    testDirectJobDetail().catch((error) => {
+        console.error('❌ テストエラー:', error);
+        process.exit(1);
+    });
+}
+</file>
+
+<file path="src/test/new-detail-test.ts">
+import { chromium } from 'playwright';
+import dotenv from 'dotenv';
+
+// 環境変数読み込み
+dotenv.config();
+
+async function testNewJobDetail() {
+    console.log('🚀 CrowdWorks最新案件詳細取得テスト開始...');
+
+    const browser = await chromium.launch({
+        headless: false,
+        devtools: false,
+        args: ['--start-maximized']
+    });
+
+    try {
+        const context = await browser.newContext({
+            userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+            viewport: { width: 1920, height: 1080 },
+        });
+
+        const page = await context.newPage();
+
+        // 実際の案件詳細ページに直接アクセス
+        const jobUrl = 'https://crowdworks.jp/public/jobs/12131254';
+
+        console.log(`📄 案件詳細ページアクセス: ${jobUrl}`);
+        await page.goto(jobUrl, {
+            waitUntil: 'domcontentloaded',
+            timeout: 60000
+        });
+
+        await page.waitForTimeout(3000);
+
+        // ページタイトル確認
+        const title = await page.title();
+        console.log(`📋 ページタイトル: "${title}"`);
+
+        // 新しい構造に基づいた詳細情報抽出
+        const jobDetail = await page.evaluate(() => {
+            const doc = (globalThis as any).document;
+
+            // 案件タイトル - h1の最初の部分のみ取得
+            const titleElement = doc.querySelector('h1');
+            const fullTitle = titleElement?.textContent?.trim() || '';
+            const title = fullTitle.split('の仕事の依頼')[0]?.trim() || fullTitle;
+
+            // 案件ID
+            const jobId = (globalThis as any).window.location.pathname.match(/\/(\d+)$/)?.[1] || '';
+
+            // カテゴリ - 正確なリンクから取得
+            const categoryLink = doc.querySelector('a[href*="/public/jobs/category/"]');
+            const category = categoryLink?.textContent?.trim() || '';
+
+            // テーブル情報を行ベースで取得
+            const tableRows = doc.querySelectorAll('table tr');
+            let paymentType = '';
+            let budget = '';
+            let deliveryDate = '';
+            let postDate = '';
+            let applicationDeadline = '';
+            let applicantCount = 0;
+            let contractCount = 0;
+            let recruitmentCount = 0;
+            let favoriteCount = 0;
+
+            tableRows.forEach((row: any) => {
+                const cells = row.querySelectorAll('td');
+                if (cells.length === 2) {
+                    const label = cells[0]?.textContent?.trim() || '';
+                    const value = cells[1]?.textContent?.trim() || '';
+
+                    // 仕事の概要情報
+                    if (label === '固定報酬制') {
+                        paymentType = '固定報酬制';
+                        budget = value;
+                    } else if (label === '時間単価制') {
+                        paymentType = '時間単価制';
+                        budget = value;
+                    } else if (label === '納品希望日') {
+                        deliveryDate = value === '-' ? '' : value;
+                    } else if (label === '掲載日') {
+                        postDate = value;
+                    } else if (label === '応募期限') {
+                        applicationDeadline = value;
+                    }
+                    // 応募状況情報
+                    else if (label === '応募した人') {
+                        applicantCount = parseInt(value.replace(/[^\d]/g, '')) || 0;
+                    } else if (label === '契約した人') {
+                        contractCount = parseInt(value.replace(/[^\d]/g, '')) || 0;
+                    } else if (label === '募集人数') {
+                        recruitmentCount = parseInt(value.replace(/[^\d]/g, '')) || 0;
+                    } else if (label === '気になる！リスト') {
+                        favoriteCount = parseInt(value.replace(/[^\d]/g, '')) || 0;
+                    }
+                }
+            });
+
+            // クライアント情報
+            const clientLink = doc.querySelector('a[href*="/public/employers/"]');
+            const clientName = clientLink?.textContent?.trim() || '匿名';
+            const clientUrl = clientLink?.getAttribute('href') || '';
+
+            // 評価情報 - definition要素から
+            let overallRating = '';
+            let orderHistory = '';
+            let completionRate = '';
+
+            const definitions = doc.querySelectorAll('definition');
+            definitions.forEach((def: any) => {
+                const text = def.textContent?.trim() || '';
+                if (text.match(/^\d+\.\d+$/)) {
+                    overallRating = text;
+                } else if (text.match(/^\d+$/) && text.length <= 2) {
+                    if (!orderHistory) orderHistory = text;
+                    else if (!completionRate) completionRate = text;
+                }
+            });
+
+            // 本人確認状況
+            const pageText = doc.body?.textContent || '';
+            const identityVerified = !pageText.includes('本人確認未提出');
+
+            // 詳細説明 - 最も長いテーブルセルから取得
+            let detailedDescription = '';
+            let maxLength = 0;
+            const allCells = doc.querySelectorAll('td');
+            allCells.forEach((cell: any) => {
+                const text = cell.textContent?.trim() || '';
+                if (text.length > maxLength && text.length > 100) {
+                    detailedDescription = text;
+                    maxLength = text.length;
+                }
+            });
+
+            // 最近の応募者
+            const recentApplicants: Array<{
+                name: string;
+                applicationDate: string;
+            }> = [];
+
+            // 最後のテーブルから応募者を取得
+            const tables = doc.querySelectorAll('table');
+            if (tables.length > 0) {
+                const lastTable = tables[tables.length - 1];
+                const applicantRows = lastTable.querySelectorAll('tbody tr');
+
+                applicantRows.forEach((row: any) => {
+                    const cells = row.querySelectorAll('td');
+                    if (cells.length >= 2) {
+                        const nameCell = cells[0];
+                        const dateCell = cells[1];
+
+                        const nameLink = nameCell.querySelector('a');
+                        const name = nameLink?.textContent?.trim() || nameCell.textContent?.trim() || '';
+                        const applicationDate = dateCell.textContent?.trim() || '';
+
+                        if (name && applicationDate && applicationDate.includes('/') && !name.includes('クラウドワーカー')) {
+                            recentApplicants.push({ name, applicationDate });
+                        }
+                    }
+                });
+            }
+
+            return {
+                jobId,
+                title,
+                category,
+                paymentType,
+                budget,
+                postDate,
+                deliveryDate,
+                applicationDeadline,
+                applicantCount,
+                contractCount,
+                recruitmentCount,
+                favoriteCount,
+                clientName,
+                clientUrl: clientUrl ? `https://crowdworks.jp${clientUrl}` : '',
+                overallRating,
+                orderHistory: orderHistory ? orderHistory + '件' : '',
+                completionRate: completionRate ? completionRate + '%' : '',
+                identityVerified,
+                detailedDescription: detailedDescription.length > 500 ?
+                    detailedDescription.substring(0, 500) + '...' : detailedDescription,
+                recentApplicants
+            };
+        });
+
+        // 結果表示
+        console.log('\n📊 === 新構造での抽出結果 ===');
+        console.log(`🆔 案件ID: ${jobDetail.jobId}`);
+        console.log(`🏷️ タイトル: ${jobDetail.title}`);
+        console.log(`📂 カテゴリ: ${jobDetail.category}`);
+        console.log(`💰 支払い: ${jobDetail.paymentType}`);
+        console.log(`💵 予算: ${jobDetail.budget}`);
+        console.log(`📅 掲載日: ${jobDetail.postDate}`);
+        console.log(`⏰ 納期: ${jobDetail.deliveryDate}`);
+        console.log(`📬 応募期限: ${jobDetail.applicationDeadline}`);
+
+        console.log(`\n👥 応募状況:`);
+        console.log(`   - 応募者: ${jobDetail.applicantCount}人`);
+        console.log(`   - 契約済み: ${jobDetail.contractCount}人`);
+        console.log(`   - 募集人数: ${jobDetail.recruitmentCount}人`);
+        console.log(`   - 気になる: ${jobDetail.favoriteCount}人`);
+
+        console.log(`\n🏢 クライアント:`);
+        console.log(`   - 名前: ${jobDetail.clientName}`);
+        console.log(`   - URL: ${jobDetail.clientUrl}`);
+        console.log(`   - 評価: ${jobDetail.overallRating}`);
+        console.log(`   - 実績: ${jobDetail.orderHistory}`);
+        console.log(`   - 完了率: ${jobDetail.completionRate}`);
+        console.log(`   - 本人確認: ${jobDetail.identityVerified ? '済み' : '未確認'}`);
+
+        if (jobDetail.recentApplicants.length > 0) {
+            console.log(`\n👤 最近の応募者 (${jobDetail.recentApplicants.length}人):`);
+            jobDetail.recentApplicants.slice(0, 5).forEach((applicant, i) => {
+                console.log(`   ${i + 1}. ${applicant.name} (${applicant.applicationDate})`);
+            });
+        }
+
+        console.log(`\n📝 仕事内容: ${jobDetail.detailedDescription.substring(0, 300)}...`);
+
+        console.log('\n⏱️ 5秒待機してからブラウザを閉じます...');
+        await page.waitForTimeout(5000);
+
+        await context.close();
+
+    } finally {
+        await browser.close();
+        console.log('🔒 ブラウザクリーンアップ完了');
+    }
+
+    console.log('✅ 新構造案件詳細取得テスト完了！');
+}
+
+// テスト実行
+if (require.main === module) {
+    testNewJobDetail().catch((error) => {
+        console.error('❌ テストエラー:', error);
+        process.exit(1);
+    });
+}
+</file>
+
+<file path="src/test/simple-test.ts">
+import { chromium } from 'playwright';
+import dotenv from 'dotenv';
+
+// 環境変数読み込み
+dotenv.config();
+
+async function simpleTest() {
+    console.log('🚀 CrowdWorks簡易テスト開始...');
+
+    const browser = await chromium.launch({
+        headless: false, // 視覚的確認のため
+        devtools: false,
+        args: ['--start-maximized']
+    });
+
+    try {
+        const context = await browser.newContext({
+            userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+            viewport: { width: 1920, height: 1080 },
+        });
+
+        const page = await context.newPage();
+
+        // CrowdWorks公開案件ページに直接アクセス
+        console.log('📄 CrowdWorks案件ページにアクセス...');
+        await page.goto('https://crowdworks.jp/public/jobs', {
+            waitUntil: 'domcontentloaded', // networkidleより軽量
+            timeout: 60000 // タイムアウトを60秒に延長
+        });
+
+        // ページの読み込み完了まで少し待機
+        await page.waitForTimeout(3000);
+
+        // ページタイトル取得
+        const title = await page.title();
+        console.log(`📋 ページタイトル: "${title}"`);
+
+        // 案件数をカウント
+        const jobCount = await page.evaluate(() => {
+            const jobLinks = (globalThis as any).document.querySelectorAll('a[href*="/public/jobs/"]');
+            return jobLinks.length;
+        });
+
+        console.log(`📊 発見された案件リンク数: ${jobCount}`);
+
+        if (jobCount > 0) {
+            console.log('✅ CrowdWorks案件ページへのアクセス成功！');
+
+            // 詳細な案件情報を取得
+            const jobInfo = await page.evaluate(() => {
+                const jobElements = (globalThis as any).document.querySelectorAll('main li, ul li');
+                const jobs = [];
+
+                for (let i = 0; i < Math.min(jobElements.length, 3); i++) {
+                    const jobElement = jobElements[i];
+                    if (!jobElement) continue;
+
+                    // タイトルとURLを探す
+                    const titleElement = jobElement.querySelector('a[href*="/public/jobs/"]');
+                    if (!titleElement) continue;
+
+                    const title = titleElement?.textContent?.trim() || '不明';
+                    const href = titleElement?.getAttribute('href') || '';
+                    const url = href.startsWith('http') ? href : `https://crowdworks.jp${href}`;
+
+                    // 予算情報を探す
+                    const allElements = jobElement.querySelectorAll('*');
+                    let budget = '不明';
+                    for (const el of allElements) {
+                        const text = el?.textContent?.trim() || '';
+                        if (text.includes('円') || text.includes('固定報酬制') || text.includes('時間単価制')) {
+                            budget = text;
+                            break;
+                        }
+                    }
+
+                    jobs.push({ title, url, budget });
+                }
+
+                return jobs;
+            });
+
+            console.log('\n📋 抽出された案件情報:');
+            jobInfo.forEach((job, index) => {
+                console.log(`${index + 1}. ${job.title}`);
+                console.log(`   💰 予算: ${job.budget}`);
+                console.log(`   🔗 URL: ${job.url}`);
+                console.log('');
+            });
+
+        } else {
+            console.log('⚠️ 案件が見つかりませんでした');
+        }
+
+        // 5秒待機してから終了
+        console.log('⏱️ 5秒後にブラウザを閉じます...');
+        await page.waitForTimeout(5000);
+
+        await context.close();
+
+    } finally {
+        await browser.close();
+        console.log('🔒 ブラウザクリーンアップ完了');
+    }
+
+    console.log('✅ 簡易テスト完了！');
+}
+
+// テスト実行
+if (require.main === module) {
+    simpleTest().catch((error) => {
+        console.error('❌ テストエラー:', error);
+        process.exit(1);
+    });
+}
 </file>
 
 <file path="test/sample.test.js">
@@ -2626,6 +3716,83 @@ sudo npx playwright install-deps
 // TODO: 実際のサービスクラスを実装後、ここからエクスポート
 
 export {};
+</file>
+
+<file path="src/test/lambda-handler-test.ts">
+import { testCrowdWorksLogin, testCrowdWorksScraping, testCrowdWorksCategories } from '../lambda/handler';
+import dotenv from 'dotenv';
+
+// 環境変数読み込み
+dotenv.config();
+
+async function main() {
+    console.log('🚀 CrowdWorks Lambda Handler 機能テスト開始...');
+
+    try {
+        // Phase 1: ログインテスト
+        console.log('\n🔐 === Phase 1: CrowdWorksログインテスト ===');
+        const loginTest = await testCrowdWorksLogin();
+
+        if (loginTest.success && loginTest.loginResult?.isLoggedIn) {
+            console.log('✅ ログインテスト成功！');
+        } else {
+            console.log('❌ ログインテスト失敗:', loginTest.error);
+            console.log('スクレイピングテストをスキップします。');
+            return;
+        }
+
+        // Phase 2: 案件スクレイピングテスト
+        console.log('\n📊 === Phase 2: 案件スクレイピングテスト ===');
+        const scrapingTest = await testCrowdWorksScraping();
+
+        if (scrapingTest.success && scrapingTest.scrapingResult) {
+            console.log(`✅ スクレイピングテスト成功！ ${scrapingTest.scrapingResult.jobsFound}件の案件を取得`);
+
+            // サンプル案件情報を表示
+            if (scrapingTest.scrapingResult.jobs.length > 0) {
+                const sampleJob = scrapingTest.scrapingResult.jobs[0];
+                if (sampleJob) {
+                    console.log('\n📋 サンプル案件情報:');
+                    console.log(`  🏷️ タイトル: ${sampleJob.title}`);
+                    console.log(`  💰 予算: ${sampleJob.budget}`);
+                    console.log(`  🏢 クライアント: ${sampleJob.client.name}`);
+                    console.log(`  🔗 URL: ${sampleJob.url}`);
+                    console.log(`  📅 掲載日: ${sampleJob.postedAt}`);
+                }
+            }
+        } else {
+            console.log('❌ スクレイピングテスト失敗:', scrapingTest.error);
+        }
+
+        // Phase 3: カテゴリ別スクレイピングテスト
+        console.log('\n🎯 === Phase 3: カテゴリ別スクレイピングテスト ===');
+        const categoryTest = await testCrowdWorksCategories();
+
+        if (categoryTest.success && categoryTest.results) {
+            console.log('✅ カテゴリ別テスト成功！');
+
+            Object.entries(categoryTest.results).forEach(([category, result]) => {
+                console.log(`  📂 ${category}: ${result.success ? '✅' : '❌'} (${result.jobsFound}件)`);
+            });
+        } else {
+            console.log('❌ カテゴリ別テスト失敗:', categoryTest.error);
+        }
+
+        console.log('\n🎉 === 全テスト完了 ===');
+
+    } catch (error) {
+        console.error('❌ テスト実行中にエラーが発生しました:', error);
+        process.exit(1);
+    }
+}
+
+// スクリプト実行時のメイン処理
+if (require.main === module) {
+    main().catch((error) => {
+        console.error('❌ メイン処理でエラーが発生しました:', error);
+        process.exit(1);
+    });
+}
 </file>
 
 <file path="src/utils/index.ts">
@@ -6073,6 +7240,119 @@ MIT License - 詳細は [LICENSE](./LICENSE) ファイルを参照
 **⚡ 次のアクション**: [実装計画書](./docs/05_implementation_plan.md) で詳細な開発ロードマップを確認してください。
 </file>
 
+<file path="package.json">
+{
+    "name": "crowdworks-search",
+    "version": "1.0.0",
+    "description": "クラウドワークス案件自動検索・評価システム",
+    "main": "dist/index.js",
+    "scripts": {
+        "build": "tsc",
+        "build:watch": "tsc --watch",
+        "clean": "rimraf dist",
+        "lint": "eslint src/**/*.ts",
+        "lint:fix": "eslint src/**/*.ts --fix",
+        "format": "prettier --write src/**/*.ts",
+        "format:check": "prettier --check src/**/*.ts",
+        "type-check": "tsc --noEmit",
+        "test": "jest",
+        "test:watch": "jest --watch",
+        "test:coverage": "jest --coverage",
+        "test:integration": "jest --testPathPattern=integration",
+        "test:e2e": "jest --testPathPattern=e2e",
+        "test:playwright": "playwright test",
+        "test:crowdworks:local": "ts-node -r dotenv/config src/test/crowdworks-scraping-test.ts",
+        "test:login:local": "npm run test:crowdworks:local",
+        "test:category:local": "cross-env TEST_TYPE=category ts-node -r dotenv/config src/test/crowdworks-scraping-test.ts",
+        "cdk:synth": "cdk synth",
+        "cdk:deploy": "cdk deploy",
+        "cdk:deploy:container": "npm run build && cdk deploy --require-approval never --context useContainerImage=true",
+        "cdk:destroy": "cdk destroy",
+        "cdk:diff": "cdk diff",
+        "dev": "ts-node src/index.ts",
+        "start": "node dist/index.js",
+        "prepare": "husky install",
+        "docker:build": "docker build -t crowdworks-search .",
+        "docker:build:lambda": "docker build -f Dockerfile.lambda -t crowdworks-search-lambda .",
+        "docker:run": "docker run --rm -it crowdworks-search",
+        "docker:run:lambda": "docker run --rm -p 9000:8080 crowdworks-search-lambda",
+        "docker:test:lambda": "docker run --rm crowdworks-lambda && echo 'Lambda Container Test Completed'",
+        "docker:dev": "docker-compose up --build",
+        "docker:test": "docker-compose --profile test run --rm test",
+        "lambda:test": "curl -XPOST 'http://localhost:9000/2015-03-31/functions/function/invocations' -d '{\"source\":\"test\",\"detail\":{}}'",
+        "lambda:local": "npm run docker:build:lambda && npm run docker:run:lambda",
+        "precommit": "lint-staged",
+        "security:audit": "npm audit --audit-level=moderate"
+    },
+    "keywords": [
+        "crowdworks",
+        "automation",
+        "scraping",
+        "aws",
+        "serverless",
+        "typescript"
+    ],
+    "author": "Your Name",
+    "license": "MIT",
+    "private": true,
+    "engines": {
+        "node": ">=18.0.0",
+        "npm": ">=8.0.0"
+    },
+    "dependencies": {
+        "@aws-sdk/client-lambda": "^3.450.0",
+        "@aws-sdk/client-s3": "^3.450.0",
+        "@aws-sdk/client-sns": "^3.450.0",
+        "@aws-sdk/client-ssm": "^3.540.0",
+        "aws-cdk-lib": "^2.156.0",
+        "aws-lambda": "^1.0.7",
+        "aws-sdk": "^2.1691.0",
+        "constructs": "^10.3.0",
+        "dotenv": "^16.5.0",
+        "openai": "^4.20.0",
+        "playwright": "^1.48.2",
+        "source-map-support": "^0.5.21",
+        "typescript": "^5.6.3",
+        "zod": "^3.22.0"
+    },
+    "devDependencies": {
+        "@types/aws-lambda": "^8.10.145",
+        "@types/jest": "^29.5.14",
+        "@types/node": "^22.9.1",
+        "@typescript-eslint/eslint-plugin": "^8.14.0",
+        "@typescript-eslint/parser": "^8.14.0",
+        "aws-cdk": "^2.170.0",
+        "cross-env": "^7.0.3",
+        "esbuild": "^0.24.0",
+        "eslint": "^9.14.0",
+        "eslint-config-prettier": "^9.1.0",
+        "eslint-plugin-prettier": "^5.2.1",
+        "husky": "^8.0.0",
+        "jest": "^29.7.0",
+        "lint-staged": "^15.0.0",
+        "nock": "^13.3.0",
+        "nodemon": "^3.1.7",
+        "prettier": "^3.3.3",
+        "ts-jest": "^29.2.5",
+        "ts-node": "^10.9.2",
+        "tsconfig-paths": "^4.2.0"
+    },
+    "husky": {
+        "hooks": {
+            "pre-commit": "lint-staged",
+            "pre-push": "npm run type-check && npm run test"
+        }
+    },
+    "lint-staged": {
+        "src/**/*.{ts,tsx}": [
+            "eslint --fix",
+            "prettier --write",
+            "git add"
+        ]
+    }
+}
+</file>
+
 <file path="src/lambda/handler.ts">
 /**
  * AWS Lambda Handler for CrowdWorks Search System
@@ -6485,10 +7765,11 @@ async function testPlaywrightBasic(): Promise<{
         '--disable-features=TranslateUI',
         '--disable-ipc-flooding-protection',
       ],
-      // Lambda環境でのChromium実行パス
-      executablePath: process.env['PLAYWRIGHT_BROWSERS_PATH']
-        ? `${process.env['PLAYWRIGHT_BROWSERS_PATH']}/chromium`
-        : '/usr/bin/chromium',
+      ...(process.env['AWS_LAMBDA_FUNCTION_NAME'] ? {
+        executablePath: process.env['PLAYWRIGHT_BROWSERS_PATH']
+          ? `${process.env['PLAYWRIGHT_BROWSERS_PATH']}/chromium`
+          : '/usr/bin/chromium'
+      } : {}),
     });
 
     console.log('✅ Chromium起動成功');
@@ -6825,7 +8106,7 @@ async function scrapeCrowdWorksJobs(page: Page, maxJobs: number = 10): Promise<S
 /**
  * CrowdWorks案件取得テスト（Playwright統合版）
  */
-async function testCrowdWorksScraping(): Promise<{
+export async function testCrowdWorksScraping(): Promise<{
   success: boolean;
   scrapingResult?: ScrapingResult;
   error?: string;
@@ -6854,9 +8135,11 @@ async function testCrowdWorksScraping(): Promise<{
         '--disable-features=TranslateUI',
         '--disable-ipc-flooding-protection',
       ],
-      executablePath: process.env['PLAYWRIGHT_BROWSERS_PATH']
-        ? `${process.env['PLAYWRIGHT_BROWSERS_PATH']}/chromium`
-        : '/usr/bin/chromium',
+      ...(process.env['AWS_LAMBDA_FUNCTION_NAME'] ? {
+        executablePath: process.env['PLAYWRIGHT_BROWSERS_PATH']
+          ? `${process.env['PLAYWRIGHT_BROWSERS_PATH']}/chromium`
+          : '/usr/bin/chromium'
+      } : {}),
     });
 
     console.log('✅ Chromium起動成功');
@@ -6911,7 +8194,7 @@ async function testCrowdWorksScraping(): Promise<{
 /**
  * CrowdWorksログインテスト実行
  */
-async function testCrowdWorksLogin(): Promise<{
+export async function testCrowdWorksLogin(): Promise<{
   success: boolean;
   loginResult?: LoginResult;
   error?: string;
@@ -6943,9 +8226,11 @@ async function testCrowdWorksLogin(): Promise<{
         '--disable-features=TranslateUI',
         '--disable-ipc-flooding-protection',
       ],
-      executablePath: process.env['PLAYWRIGHT_BROWSERS_PATH']
-        ? `${process.env['PLAYWRIGHT_BROWSERS_PATH']}/chromium`
-        : '/usr/bin/chromium',
+      ...(process.env['AWS_LAMBDA_FUNCTION_NAME'] ? {
+        executablePath: process.env['PLAYWRIGHT_BROWSERS_PATH']
+          ? `${process.env['PLAYWRIGHT_BROWSERS_PATH']}/chromium`
+          : '/usr/bin/chromium'
+      } : {}),
     });
 
     const context = await browser.newContext({
@@ -7360,7 +8645,7 @@ async function scrapeCrowdWorksJobsByCategory(
 /**
  * 指定カテゴリのCrowdWorks案件スクレイピングテスト
  */
-async function testCrowdWorksCategories(): Promise<{
+export async function testCrowdWorksCategories(): Promise<{
   success: boolean;
   results?: { [category: string]: ScrapingResult };
   error?: string;
@@ -7392,9 +8677,11 @@ async function testCrowdWorksCategories(): Promise<{
         '--disable-features=TranslateUI',
         '--disable-ipc-flooding-protection',
       ],
-      executablePath: process.env['PLAYWRIGHT_BROWSERS_PATH']
-        ? `${process.env['PLAYWRIGHT_BROWSERS_PATH']}/chromium`
-        : '/usr/bin/chromium',
+      ...(process.env['AWS_LAMBDA_FUNCTION_NAME'] ? {
+        executablePath: process.env['PLAYWRIGHT_BROWSERS_PATH']
+          ? `${process.env['PLAYWRIGHT_BROWSERS_PATH']}/chromium`
+          : '/usr/bin/chromium'
+      } : {}),
     });
 
     const context = await browser.newContext({
@@ -7491,216 +8778,228 @@ async function testCrowdWorksCategories(): Promise<{
 }
 
 /**
- * 案件詳細情報を取得する
+ * 案件詳細情報を抽出
  */
-async function scrapeCrowdWorksJobDetail(page: Page, jobUrl: string): Promise<CrowdWorksJobDetail | null> {
-  try {
-    console.log(`📄 案件詳細取得開始: ${jobUrl}`);
+export async function scrapeCrowdWorksJobDetail(page: Page, jobUrl: string): Promise<CrowdWorksJobDetail> {
+  console.log(`📄 案件詳細ページにアクセス: ${jobUrl}`);
 
-    // 案件詳細ページに移動
-    await page.goto(jobUrl, { waitUntil: 'networkidle' });
-    await page.waitForTimeout(2000);
+  await page.goto(jobUrl, {
+    waitUntil: 'domcontentloaded',
+    timeout: 60000
+  });
 
-    // 案件詳細情報を抽出
-    const jobDetail = await page.evaluate((url: string) => {
-      // URLから案件IDを抽出
-      const jobIdMatch = url.match(/\/public\/jobs\/(\d+)/);
-      const jobId = jobIdMatch ? jobIdMatch[1] : '';
+  await page.waitForTimeout(2000);
 
-      // タイトル取得
-      const titleElement = (globalThis as any).document.querySelector('h1');
-      const fullTitle = titleElement?.textContent?.trim() || '';
-      const title = fullTitle.replace(/\s+(ウェブデザイン|アンケート|その他).*の仕事の依頼.*$/, '').trim();
+  const detail = await page.evaluate(() => {
+    const doc = (globalThis as any).document;
 
-      // カテゴリ取得
-      const categoryElement = (globalThis as any).document.querySelector('h1 a');
-      const category = categoryElement?.textContent?.trim() || '';
+    // タイトル取得（h1から正確に抽出）
+    const titleElement = doc.querySelector('h1');
+    const fullTitle = titleElement?.textContent?.trim() || '';
+    // 案件タイトルから不要な部分を削除（より正確に）
+    const title = fullTitle.replace(/\s+(ウェブデザイン|アンケート|その他).*の仕事の依頼.*$/, '').trim();
 
-      // 仕事の概要テーブルから情報抽出
-      const overviewRows = (globalThis as any).document.querySelectorAll('table tr');
-      let paymentType = '';
-      let budget = '';
-      let deliveryDate = '';
-      let postDate = '';
-      let applicationDeadline = '';
-      let desiredImages: string[] = [];
+    // 案件IDをURLから抽出
+    const jobId = (globalThis as any).window.location.pathname.match(/\/(\d+)$/)?.[1] || '';
 
-      overviewRows.forEach((row: any) => {
+    // カテゴリを取得（パンくずから）
+    const categoryElement = doc.querySelector('a[href*="/public/jobs/category/"]');
+    const category = categoryElement?.textContent?.trim() || '';
+
+    // テキストベースでの情報抽出
+    const pageText = doc.body?.textContent || '';
+
+    // 支払い・予算情報を抽出
+    let paymentType = '';
+    let budget = '';
+
+    const fixedPaymentMatch = pageText.match(/固定報酬制\s*([0-9,]+円\s*〜\s*[0-9,]+円|[0-9,]+円)/);
+    if (fixedPaymentMatch) {
+      paymentType = '固定報酬制';
+      budget = fixedPaymentMatch[1];
+    } else {
+      const hourlyPaymentMatch = pageText.match(/時間単価制\s*([0-9,]+円\/時間\s*〜\s*[0-9,]+円\/時間|[0-9,]+円\/時間)/);
+      if (hourlyPaymentMatch) {
+        paymentType = '時間単価制';
+        budget = hourlyPaymentMatch[1];
+      }
+    }
+
+    // 日付情報を抽出
+    let postDate = '';
+    let applicationDeadline = '';
+    let deliveryDate = '';
+
+    const postDateMatch = pageText.match(/掲載日\s*(\d{4}年\d{2}月\d{2}日)/);
+    if (postDateMatch) {
+      postDate = postDateMatch[1];
+    }
+
+    const deadlineMatch = pageText.match(/応募期限\s*(\d{4}年\d{2}月\d{2}日)/);
+    if (deadlineMatch) {
+      applicationDeadline = deadlineMatch[1];
+    }
+
+    const deliveryMatch = pageText.match(/納品希望日\s*([^\s]+)/);
+    if (deliveryMatch && deliveryMatch[1] !== '-') {
+      deliveryDate = deliveryMatch[1];
+    }
+
+    // 応募状況情報を抽出
+    let applicantCount = 0;
+    let contractCount = 0;
+    let recruitmentCount = 0;
+    let favoriteCount = 0;
+
+    const applicantMatch = pageText.match(/応募した人\s*(\d+)\s*人/);
+    if (applicantMatch) applicantCount = parseInt(applicantMatch[1]);
+
+    const contractMatch = pageText.match(/契約した人\s*(\d+)\s*人/);
+    if (contractMatch) contractCount = parseInt(contractMatch[1]);
+
+    const recruitmentMatch = pageText.match(/募集人数\s*(\d+)\s*人/);
+    if (recruitmentMatch) recruitmentCount = parseInt(recruitmentMatch[1]);
+
+    const favoriteMatch = pageText.match(/気になる！リスト\s*(\d+)\s*人/);
+    if (favoriteMatch) favoriteCount = parseInt(favoriteMatch[1]);
+
+    // クライアント情報を抽出
+    const clientLinkElement = doc.querySelector('a[href*="/public/employers/"]');
+    let clientName = clientLinkElement?.textContent?.trim() || '匿名';
+
+    // anke7562のようなクライアント名も抽出
+    if (clientName === '匿名' || !clientName) {
+      const clientNameMatch = pageText.match(/anke\d+|[a-zA-Z0-9_]+(?=\s*本人確認)/);
+      if (clientNameMatch) {
+        clientName = clientNameMatch[0];
+      }
+    }
+
+    // 評価情報を抽出
+    let overallRating = '';
+    let orderHistory = '';
+    let completionRate = '';
+
+    const ratingMatch = pageText.match(/総合評価\s*"?(\d+\.\d+)"?|"(\d+\.\d+)"/);
+    if (ratingMatch) overallRating = ratingMatch[1] || ratingMatch[2];
+
+    const historyMatch = pageText.match(/募集実績\s*"?(\d+)"?\s*件|"(\d+)"\s*件/);
+    if (historyMatch) orderHistory = (historyMatch[1] || historyMatch[2]) + '件';
+
+    const completionMatch = pageText.match(/プロジェクト完了率\s*"?(\d+)"?\s*%|"(\d+)"\s*%/);
+    if (completionMatch) completionRate = (completionMatch[1] || completionMatch[2]) + '%';
+
+    // 本人確認状態
+    let identityVerified = false;
+    if (pageText.includes('本人確認済み') || !pageText.includes('本人確認未提出')) {
+      identityVerified = true;
+    }
+
+    // 詳細説明を取得（最も長いテーブルセルから）
+    let detailedDescription = '';
+    const allCells = doc.querySelectorAll('td');
+    let maxLength = 0;
+
+    allCells.forEach((cell: any) => {
+      const text = cell.textContent?.trim() || '';
+      if (text.length > maxLength && text.length > 200 && text.includes('概要')) {
+        detailedDescription = text;
+        maxLength = text.length;
+      }
+    });
+
+    // フォールバック：概要が見つからない場合は最も長いセルを取得
+    if (!detailedDescription) {
+      maxLength = 0;
+      allCells.forEach((cell: any) => {
+        const text = cell.textContent?.trim() || '';
+        if (text.length > maxLength && text.length > 100) {
+          detailedDescription = text;
+          maxLength = text.length;
+        }
+      });
+    }
+
+    // 最近の応募者情報を取得
+    const recentApplicants: Array<{
+      name: string;
+      applicationDate: string;
+    }> = [];
+
+    // テーブルから応募者情報を取得
+    const tables = doc.querySelectorAll('table');
+    for (let i = tables.length - 1; i >= 0; i--) {
+      const table = tables[i];
+      const rows = table.querySelectorAll('tbody tr');
+
+      rows.forEach((row: any) => {
         const cells = row.querySelectorAll('td');
         if (cells.length >= 2) {
-          const label = cells[0]?.textContent?.trim() || '';
-          const value = cells[1]?.textContent?.trim() || '';
+          const nameCell = cells[0];
+          const dateCell = cells[1];
 
-          if (label.includes('固定報酬制') || label.includes('時間単価制')) {
-            paymentType = label;
-            budget = value;
-          } else if (label.includes('納品希望日')) {
-            deliveryDate = value;
-          } else if (label.includes('掲載日')) {
-            postDate = value;
-          } else if (label.includes('応募期限')) {
-            applicationDeadline = value;
-          } else if (label.includes('希望イメージ')) {
-            // 希望イメージの各項目を抽出
-            const imageElements = cells[1].querySelectorAll('*');
-            imageElements.forEach((el: any) => {
-              const text = el?.textContent?.trim();
-              if (text && text.length > 0 && text.length < 10) {
-                desiredImages.push(text);
-              }
+          const nameLink = nameCell.querySelector('a');
+          const name = nameLink?.textContent?.trim() || nameCell.textContent?.trim() || '';
+          const applicationDate = dateCell.textContent?.trim() || '';
+
+          // 有効な応募者データかチェック
+          if (name &&
+            applicationDate &&
+            applicationDate.includes('/') &&
+            !name.includes('クラウドワーカー') &&
+            name.length < 50) {
+            recentApplicants.push({
+              name,
+              applicationDate
             });
           }
         }
       });
 
-      // 応募状況テーブルから情報抽出
-      const statusRows = (globalThis as any).document.querySelectorAll('table tr');
-      let applicantCount = 0;
-      let contractCount = 0;
-      let recruitmentCount = 0;
-      let favoriteCount = 0;
+      // 応募者が見つかったらループを終了
+      if (recentApplicants.length > 0) {
+        break;
+      }
+    }
 
-      statusRows.forEach((row: any) => {
-        const cells = row.querySelectorAll('td');
-        if (cells.length >= 2) {
-          const label = cells[0]?.textContent?.trim() || '';
-          const value = cells[1]?.textContent?.trim() || '';
-          const numValue = parseInt(value.replace(/[^\d]/g, ''));
+    return {
+      jobId,
+      title: title || fullTitle, // フォールバック
+      url: (globalThis as any).window.location.href,
+      category,
+      paymentType,
+      budget,
+      postDate,
+      deliveryDate,
+      applicationDeadline,
+      desiredImages: [], // 希望イメージは現在の構造では取得困難なため空配列
+      applicantCount,
+      contractCount,
+      recruitmentCount,
+      favoriteCount,
+      client: {
+        name: clientName,
+        url: clientLinkElement?.getAttribute('href') ?
+          `https://crowdworks.jp${clientLinkElement.getAttribute('href')}` : '',
+        overallRating,
+        orderHistory,
+        completionRate,
+        thankCount: '', // ありがとう件数は現在の構造では取得困難
+        identityVerified,
+        orderRuleCheck: false, // 発注ルールチェックは現在の構造では取得困難
+        description: '', // クライアント説明は現在の構造では取得困難
+      },
+      detailedDescription,
+      recentApplicants: recentApplicants.map(applicant => ({
+        ...applicant,
+        url: '' // 応募者URLは現在の構造では取得困難
+      })),
+      scrapedAt: new Date().toISOString()
+    };
+  });
 
-          if (label.includes('応募した人')) {
-            applicantCount = numValue || 0;
-          } else if (label.includes('契約した人')) {
-            contractCount = numValue || 0;
-          } else if (label.includes('募集人数')) {
-            recruitmentCount = numValue || 0;
-          } else if (label.includes('気になる')) {
-            favoriteCount = numValue || 0;
-          }
-        }
-      });
-
-      // 詳細な仕事内容
-      const detailRows = (globalThis as any).document.querySelectorAll('table tr');
-      let detailedDescription = '';
-      detailRows.forEach((row: any) => {
-        const cell = row.querySelector('td');
-        if (cell) {
-          const text = cell?.textContent?.trim() || '';
-          if (text.length > 100) { // 長いテキストが詳細説明の可能性が高い
-            detailedDescription = text;
-          }
-        }
-      });
-
-      // クライアント情報
-      const clientNameElement = (globalThis as any).document.querySelector('a[href*="/public/employers/"]');
-      const clientName = clientNameElement?.textContent?.trim() || '匿名';
-      const clientUrl = clientNameElement?.getAttribute('href') || '';
-
-      // 評価情報
-      let overallRating = '';
-      let orderHistory = '';
-      let completionRate = '';
-      let thankCount = '';
-
-      const definitionElements = (globalThis as any).document.querySelectorAll('dd, definition');
-      definitionElements.forEach((def: any) => {
-        const text = def?.textContent?.trim() || '';
-        if (text.includes('.') && text.length < 5) {
-          overallRating = text;
-        } else if (text.includes('件') && text.length < 10) {
-          if (!orderHistory) orderHistory = text;
-        } else if (text.includes('%')) {
-          completionRate = text;
-        }
-      });
-
-      // ありがとう件数
-      const thankElements = (globalThis as any).document.querySelectorAll('*');
-      thankElements.forEach((el: any) => {
-        const text = el?.textContent?.trim() || '';
-        if (text.includes('ありがとう') && text.includes('件')) {
-          thankCount = text.match(/\d+/)?.[0] || '0';
-        }
-      });
-
-      // 本人確認・発注ルールチェック
-      const pageText = (globalThis as any).document.body?.textContent || '';
-      const identityVerified = !pageText.includes('本人確認未提出');
-      const orderRuleCheck = !pageText.includes('発注ルールチェック未回答');
-
-      // クライアント説明
-      let clientDescription = '';
-      const descriptionElements = (globalThis as any).document.querySelectorAll('p');
-      descriptionElements.forEach((p: any) => {
-        const text = p?.textContent?.trim() || '';
-        if (text.includes('主に') && text.length > 10 && text.length < 200) {
-          clientDescription = text;
-        }
-      });
-
-      // 最近の応募者情報
-      const recentApplicants: Array<{ name: string; url: string; applicationDate: string }> = [];
-      const applicantRows = (globalThis as any).document.querySelectorAll('tbody tr');
-      applicantRows.forEach((row: any) => {
-        const cells = row.querySelectorAll('td');
-        if (cells.length >= 2) {
-          const nameElement = cells[0]?.querySelector('a');
-          if (nameElement) {
-            const name = nameElement?.textContent?.trim() || '';
-            const applicantUrl = nameElement?.getAttribute('href') || '';
-            const applicationDate = cells[1]?.textContent?.trim() || '';
-
-            if (name && applicationDate.includes('/')) {
-              recentApplicants.push({
-                name,
-                url: applicantUrl.startsWith('http') ? applicantUrl : `https://crowdworks.jp${applicantUrl}`,
-                applicationDate
-              });
-            }
-          }
-        }
-      });
-
-      return {
-        jobId: jobId || '',
-        title,
-        category,
-        url,
-        paymentType,
-        budget,
-        deliveryDate,
-        postDate,
-        applicationDeadline,
-        desiredImages,
-        applicantCount,
-        contractCount,
-        recruitmentCount,
-        favoriteCount,
-        detailedDescription,
-        client: {
-          name: clientName,
-          url: clientUrl.startsWith('http') ? clientUrl : `https://crowdworks.jp${clientUrl}`,
-          overallRating,
-          orderHistory,
-          completionRate,
-          thankCount,
-          identityVerified,
-          orderRuleCheck,
-          description: clientDescription
-        },
-        recentApplicants: recentApplicants.slice(0, 10), // 最新10件
-        scrapedAt: new Date().toISOString()
-      };
-    }, jobUrl);
-
-    console.log(`✅ 案件詳細取得完了: ${jobDetail.title}`);
-    return jobDetail;
-
-  } catch (error) {
-    console.error(`❌ 案件詳細取得エラー: ${jobUrl}`, error);
-    return null;
-  }
+  console.log(`✅ 案件詳細情報を取得: ${detail.title}`);
+  return detail;
 }
 
 /**
@@ -7736,9 +9035,11 @@ export async function scrapeCrowdWorksJobsByCategoryWithDetails(params: {
         '--disable-features=TranslateUI',
         '--disable-ipc-flooding-protection',
       ],
-      executablePath: process.env['PLAYWRIGHT_BROWSERS_PATH']
-        ? `${process.env['PLAYWRIGHT_BROWSERS_PATH']}/chromium`
-        : '/usr/bin/chromium',
+      ...(process.env['AWS_LAMBDA_FUNCTION_NAME'] ? {
+        executablePath: process.env['PLAYWRIGHT_BROWSERS_PATH']
+          ? `${process.env['PLAYWRIGHT_BROWSERS_PATH']}/chromium`
+          : '/usr/bin/chromium'
+      } : {}),
     });
 
     const context = await browser.newContext({
@@ -7910,119 +9211,6 @@ export const lambdaHandler = async (
 
 // API Gateway用ハンドラー（互換性維持）
 export const handler = lambdaHandler;
-</file>
-
-<file path="package.json">
-{
-    "name": "crowdworks-search",
-    "version": "1.0.0",
-    "description": "クラウドワークス案件自動検索・評価システム",
-    "main": "dist/index.js",
-    "scripts": {
-        "build": "tsc",
-        "build:watch": "tsc --watch",
-        "clean": "rimraf dist",
-        "lint": "eslint src/**/*.ts",
-        "lint:fix": "eslint src/**/*.ts --fix",
-        "format": "prettier --write src/**/*.ts",
-        "format:check": "prettier --check src/**/*.ts",
-        "type-check": "tsc --noEmit",
-        "test": "jest",
-        "test:watch": "jest --watch",
-        "test:coverage": "jest --coverage",
-        "test:integration": "jest --testPathPattern=integration",
-        "test:e2e": "jest --testPathPattern=e2e",
-        "test:playwright": "playwright test",
-        "test:crowdworks:local": "ts-node -r dotenv/config src/test/crowdworks-scraping-test.ts",
-        "test:login:local": "npm run test:crowdworks:local",
-        "test:category:local": "cross-env TEST_TYPE=category ts-node -r dotenv/config src/test/crowdworks-scraping-test.ts",
-        "cdk:synth": "cdk synth",
-        "cdk:deploy": "cdk deploy",
-        "cdk:deploy:container": "npm run build && cdk deploy --require-approval never --context useContainerImage=true",
-        "cdk:destroy": "cdk destroy",
-        "cdk:diff": "cdk diff",
-        "dev": "ts-node src/index.ts",
-        "start": "node dist/index.js",
-        "prepare": "husky install",
-        "docker:build": "docker build -t crowdworks-search .",
-        "docker:build:lambda": "docker build -f Dockerfile.lambda -t crowdworks-search-lambda .",
-        "docker:run": "docker run --rm -it crowdworks-search",
-        "docker:run:lambda": "docker run --rm -p 9000:8080 crowdworks-search-lambda",
-        "docker:test:lambda": "docker run --rm crowdworks-lambda && echo 'Lambda Container Test Completed'",
-        "docker:dev": "docker-compose up --build",
-        "docker:test": "docker-compose --profile test run --rm test",
-        "lambda:test": "curl -XPOST 'http://localhost:9000/2015-03-31/functions/function/invocations' -d '{\"source\":\"test\",\"detail\":{}}'",
-        "lambda:local": "npm run docker:build:lambda && npm run docker:run:lambda",
-        "precommit": "lint-staged",
-        "security:audit": "npm audit --audit-level=moderate"
-    },
-    "keywords": [
-        "crowdworks",
-        "automation",
-        "scraping",
-        "aws",
-        "serverless",
-        "typescript"
-    ],
-    "author": "Your Name",
-    "license": "MIT",
-    "private": true,
-    "engines": {
-        "node": ">=18.0.0",
-        "npm": ">=8.0.0"
-    },
-    "dependencies": {
-        "@aws-sdk/client-lambda": "^3.450.0",
-        "@aws-sdk/client-s3": "^3.450.0",
-        "@aws-sdk/client-sns": "^3.450.0",
-        "@aws-sdk/client-ssm": "^3.540.0",
-        "aws-cdk-lib": "^2.156.0",
-        "aws-lambda": "^1.0.7",
-        "aws-sdk": "^2.1691.0",
-        "constructs": "^10.3.0",
-        "dotenv": "^16.5.0",
-        "openai": "^4.20.0",
-        "playwright": "^1.48.2",
-        "source-map-support": "^0.5.21",
-        "typescript": "^5.6.3",
-        "zod": "^3.22.0"
-    },
-    "devDependencies": {
-        "@types/aws-lambda": "^8.10.145",
-        "@types/jest": "^29.5.14",
-        "@types/node": "^22.9.1",
-        "@typescript-eslint/eslint-plugin": "^8.14.0",
-        "@typescript-eslint/parser": "^8.14.0",
-        "aws-cdk": "^2.170.0",
-        "cross-env": "^7.0.3",
-        "esbuild": "^0.24.0",
-        "eslint": "^9.14.0",
-        "eslint-config-prettier": "^9.1.0",
-        "eslint-plugin-prettier": "^5.2.1",
-        "husky": "^8.0.0",
-        "jest": "^29.7.0",
-        "lint-staged": "^15.0.0",
-        "nock": "^13.3.0",
-        "nodemon": "^3.1.7",
-        "prettier": "^3.3.3",
-        "ts-jest": "^29.2.5",
-        "ts-node": "^10.9.2",
-        "tsconfig-paths": "^4.2.0"
-    },
-    "husky": {
-        "hooks": {
-            "pre-commit": "lint-staged",
-            "pre-push": "npm run type-check && npm run test"
-        }
-    },
-    "lint-staged": {
-        "src/**/*.{ts,tsx}": [
-            "eslint --fix",
-            "prettier --write",
-            "git add"
-        ]
-    }
-}
 </file>
 
 </files>
