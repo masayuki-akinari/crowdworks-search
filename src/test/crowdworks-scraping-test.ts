@@ -1,185 +1,333 @@
-/**
- * CrowdWorksスクレイピング動作確認テスト
- * ローカル環境でPlaywrightとCrowdWorksアクセスをテスト
- */
+import { chromium, Browser, Page } from 'playwright';
+import dotenv from 'dotenv';
 
-import { chromium } from 'playwright';
-import { SSMClient, GetParameterCommand } from '@aws-sdk/client-ssm';
+// 環境変数読み込み
+dotenv.config();
 
-// AWS SSM Client
-const ssmClient = new SSMClient({ region: process.env['AWS_REGION'] || 'ap-northeast-1' });
+// 環境変数から認証情報を取得
+async function getCrowdWorksCredentials() {
+    const email = process.env['CROWDWORKS_EMAIL'];
+    const password = process.env['CROWDWORKS_PASSWORD'];
 
-interface CrowdWorksCredentials {
-    email: string;
-    password: string;
-}
-
-/**
- * 認証情報取得（ローカル開発用）
- */
-async function getCrowdWorksCredentials(): Promise<CrowdWorksCredentials> {
-    try {
-        console.log('🔐 CrowdWorks認証情報を取得中...');
-
-        // 環境変数から取得を試行
-        const envEmail = process.env['CROWDWORKS_EMAIL'];
-        const envPassword = process.env['CROWDWORKS_PASSWORD'];
-
-        if (envEmail && envPassword) {
-            console.log('✅ 環境変数から認証情報取得完了');
-            return { email: envEmail, password: envPassword };
-        }
-
-        console.log('⚠️ 環境変数が設定されていません。Parameter Storeから取得します...');
-
-        // Parameter Storeから取得
-        const [emailParam, passwordParam] = await Promise.all([
-            ssmClient.send(new GetParameterCommand({
-                Name: '/crowdworks-search/crowdworks/email',
-                WithDecryption: true
-            })),
-            ssmClient.send(new GetParameterCommand({
-                Name: '/crowdworks-search/crowdworks/password',
-                WithDecryption: true
-            }))
-        ]);
-
-        const email = emailParam.Parameter?.Value;
-        const password = passwordParam.Parameter?.Value;
-
-        if (!email || !password) {
-            throw new Error('Parameter Storeにパラメータが見つかりません');
-        }
-
-        console.log('✅ Parameter Storeから認証情報取得完了');
-        return { email, password };
-
-    } catch (error) {
-        console.error('❌ 認証情報取得エラー:', error);
-        throw error;
+    if (!email || !password) {
+        throw new Error('❌ 環境変数 CROWDWORKS_EMAIL, CROWDWORKS_PASSWORD が設定されていません');
     }
+
+    return { email, password };
 }
 
-/**
- * CrowdWorksログインテスト
- */
-async function testCrowdWorksLogin() {
-    console.log('🚀 CrowdWorksログインテスト開始...');
-
-    const browser = await chromium.launch({
-        headless: false, // ローカルテスト用に表示
-        slowMo: 1000     // 動作を見やすくするためスロー実行
-    });
+// CrowdWorksログイン関数
+async function loginToCrowdWorks(page: Page, credentials: { email: string; password: string }) {
+    const startTime = Date.now();
 
     try {
-        const page = await browser.newPage();
+        console.log('🔐 CrowdWorksログイン開始...');
 
-        // 認証情報取得
-        const credentials = await getCrowdWorksCredentials();
-
-        // CrowdWorksログインページにアクセス
-        console.log('📄 CrowdWorksログインページアクセス中...');
+        // ログインページへ移動
         await page.goto('https://crowdworks.jp/login', {
-            waitUntil: 'networkidle',
+            waitUntil: 'domcontentloaded',
             timeout: 30000
         });
 
         console.log('✅ ログインページ読み込み完了');
-        console.log(`📋 タイトル: ${await page.title()}`);
 
-        // ログインフォーム要素の待機
-        console.log('⏳ ログインフォーム要素を待機中...');
-        await page.waitForSelector('input[type="email"], input[name="email"], #login_form input[type="text"]', {
-            timeout: 10000
-        });
+        // フォーム要素の検出と入力
+        console.log('📝 認証情報入力中...');
+        await page.getByRole('textbox', { name: 'メールアドレス' }).fill(credentials.email);
+        await page.getByRole('textbox', { name: 'パスワード' }).fill(credentials.password);
 
-        // メールアドレス入力
-        console.log('📧 メールアドレス入力中...');
-        const emailSelector = 'input[type="email"], input[name="email"], #login_form input[type="text"]';
-        await page.fill(emailSelector, credentials.email);
+        console.log('🔑 ログインボタンクリック...');
+        await page.getByRole('button', { name: 'ログイン', exact: true }).click();
 
-        // パスワード入力
-        console.log('🔑 パスワード入力中...');
-        const passwordSelector = 'input[type="password"], input[name="password"]';
-        await page.fill(passwordSelector, credentials.password);
+        // リダイレクト待機とログイン成功確認
+        console.log('⏳ ダッシュボードへのリダイレクト待機...');
+        await page.waitForURL('**/dashboard', { timeout: 15000 });
 
-        // スクリーンショット（ログイン前）
-        await page.screenshot({ path: 'login-before.png', fullPage: true });
-        console.log('📸 ログイン前スクリーンショット保存: login-before.png');
+        console.log('✅ ログイン成功！ダッシュボードにアクセス完了');
 
-        // ログインボタンクリック
-        console.log('🖱️ ログインボタンクリック中...');
-        const loginButtonSelector = 'input[type="submit"], button[type="submit"], .login-button, #login_button';
-        await page.click(loginButtonSelector);
-
-        // ログイン処理完了を待機
-        console.log('⏳ ログイン処理完了待機中...');
-        try {
-            await page.waitForNavigation({
-                waitUntil: 'networkidle',
-                timeout: 15000
-            });
-        } catch (navigationError) {
-            console.log('ℹ️ ナビゲーション待機タイムアウト');
-        }
-
-        // スクリーンショット（ログイン後）
-        await page.screenshot({ path: 'login-after.png', fullPage: true });
-        console.log('📸 ログイン後スクリーンショット保存: login-after.png');
-
-        // ログイン状態確認
-        console.log('🔍 ログイン状態確認中...');
-        const currentUrl = page.url();
-        console.log(`📋 現在のURL: ${currentUrl}`);
-
-        const isLoggedIn = await page.evaluate(() => {
-            const logoutElement = (globalThis as any).document.querySelector('a[href*="logout"], .user-menu, .header-user-menu');
-            const loginError = (globalThis as any).document.querySelector('.error, .alert, .notice');
-
-            return {
-                hasUserMenu: !!logoutElement,
-                hasError: !!loginError,
-                currentPath: (globalThis as any).window.location.pathname
-            };
-        });
-
-        const loginSuccess = isLoggedIn.hasUserMenu &&
-            !isLoggedIn.hasError &&
-            !currentUrl.includes('/login');
-
-        if (loginSuccess) {
-            console.log('✅ ログイン成功！');
-        } else {
-            console.log('❌ ログイン失敗');
-            console.log('詳細:', {
-                hasUserMenu: isLoggedIn.hasUserMenu,
-                hasError: isLoggedIn.hasError,
-                currentUrl,
-                currentPath: isLoggedIn.currentPath
-            });
-        }
-
-        // 一定時間待機（ログイン状態を確認）
-        console.log('⏸️ 5秒間待機（ログイン状態確認）...');
-        await page.waitForTimeout(5000);
+        const executionTime = Date.now() - startTime;
+        return {
+            success: true,
+            isLoggedIn: true,
+            executionTime
+        };
 
     } catch (error) {
-        console.error('❌ テスト実行エラー:', error);
-    } finally {
-        await browser.close();
-        console.log('🔒 ブラウザクローズ完了');
+        const executionTime = Date.now() - startTime;
+        const errorMessage = error instanceof Error ? error.message : String(error);
+        console.error('❌ ログインエラー:', errorMessage);
+
+        return {
+            success: false,
+            isLoggedIn: false,
+            error: errorMessage,
+            executionTime
+        };
     }
 }
 
-// テスト実行
-if (require.main === module) {
-    testCrowdWorksLogin()
-        .then(() => {
-            console.log('🎉 CrowdWorksログインテスト完了');
-            process.exit(0);
-        })
-        .catch((error) => {
-            console.error('💥 テスト失敗:', error);
-            process.exit(1);
+// 新着順ソート機能付きカテゴリスクレイピングテスト
+async function testCrowdWorksCategoryScraping(): Promise<void> {
+    const startTime = Date.now();
+    let browser: Browser | null = null;
+
+    try {
+        console.log('🚀 CrowdWorksカテゴリスクレイピングテスト開始（新着順ソート機能付き）...');
+
+        // 認証情報取得
+        const credentials = await getCrowdWorksCredentials();
+        console.log(`📧 使用メールアドレス: ${credentials.email}`);
+
+        // ブラウザ起動（ローカル開発では視覚的に確認するためheadless: false）
+        browser = await chromium.launch({
+            headless: false, // ローカルテスト用に視覚化
+            args: [
+                '--no-sandbox',
+                '--disable-setuid-sandbox',
+                '--disable-dev-shm-usage',
+            ],
         });
+
+        const context = await browser.newContext({
+            userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+            viewport: { width: 1920, height: 1080 },
+        });
+
+        const page = await context.newPage();
+
+        // ログイン実行
+        const loginResult = await loginToCrowdWorks(page, credentials);
+        if (!loginResult.success) {
+            throw new Error(`ログイン失敗: ${loginResult.error}`);
+        }
+
+        // カテゴリ配列（web_products と ec）
+        const categories = ['web_products', 'ec'];
+
+        for (const category of categories) {
+            console.log(`\n📂 === カテゴリ「${category}」処理開始 ===`);
+
+            // カテゴリページアクセス
+            const categoryUrl = `https://crowdworks.jp/public/jobs/group/${category}`;
+            console.log(`📄 カテゴリページアクセス: ${categoryUrl}`);
+
+            await page.goto(categoryUrl, {
+                waitUntil: 'domcontentloaded',
+                timeout: 30000
+            });
+
+            // ページタイトル確認
+            const pageTitle = await page.title();
+            console.log(`📋 ページタイトル: "${pageTitle}"`);
+
+            // スクリーンショット保存（新着順ソート前）
+            await page.screenshot({
+                path: `screenshot_${category}_before_sort.png`,
+                fullPage: true
+            });
+            console.log(`📸 スクリーンショット保存: screenshot_${category}_before_sort.png`);
+
+            // 新着順ソート設定の実行
+            console.log('🔄 新着順ソート設定開始...');
+
+            try {
+                // ソートドロップダウンを探してクリック
+                const sortDropdown = await page.$('combobox');
+                if (sortDropdown) {
+                    console.log('✅ ソートドロップダウン発見');
+
+                    // ドロップダウンをクリックして開く
+                    await sortDropdown.click();
+                    await page.waitForTimeout(1000);
+
+                    // 新着順オプションを選択
+                    try {
+                        await page.selectOption('combobox', { label: '新着' });
+                        console.log('✅ 新着順オプション選択成功');
+                    } catch (selectError) {
+                        console.log('⚠️ selectOption失敗、直接URLアクセスを試行');
+
+                        // 直接新着順URLにアクセス
+                        const newUrl = categoryUrl.includes('?')
+                            ? `${categoryUrl}&order=new`
+                            : `${categoryUrl}?order=new`;
+
+                        await page.goto(newUrl, { waitUntil: 'domcontentloaded', timeout: 30000 });
+                        console.log(`✅ 新着順URL直接アクセス: ${newUrl}`);
+                    }
+
+                    // ソート変更後のページ更新を待機
+                    await page.waitForTimeout(3000);
+
+                    // 現在のURLを確認
+                    const currentUrl = page.url();
+                    console.log(`🌐 現在のURL: ${currentUrl}`);
+
+                    if (currentUrl.includes('order=new')) {
+                        console.log('✅ 新着順ソート設定確認済み');
+                    } else {
+                        console.log('⚠️ URLに新着順パラメータが含まれていません');
+                    }
+
+                } else {
+                    console.log('⚠️ ソートドロップダウンが見つかりません。直接URLアクセス');
+
+                    // 直接新着順URLにアクセス
+                    const newUrl = categoryUrl.includes('?')
+                        ? `${categoryUrl}&order=new`
+                        : `${categoryUrl}?order=new`;
+
+                    await page.goto(newUrl, { waitUntil: 'domcontentloaded', timeout: 30000 });
+                    console.log(`✅ 新着順URL直接アクセス: ${newUrl}`);
+                }
+
+            } catch (sortError) {
+                console.warn('⚠️ ソート設定でエラーが発生:', sortError);
+                console.log('デフォルト順序で続行します');
+            }
+
+            // スクリーンショット保存（新着順ソート後）
+            await page.screenshot({
+                path: `screenshot_${category}_after_sort.png`,
+                fullPage: true
+            });
+            console.log(`📸 スクリーンショット保存: screenshot_${category}_after_sort.png`);
+
+            // 案件一覧の取得
+            console.log('📝 案件データ抽出開始...');
+
+            try {
+                // 案件一覧要素の確認
+                const jobCount = await page.evaluate(() => {
+                    // より多くのセレクターパターンを試行
+                    const selectors = [
+                        '.search_result .project_row',
+                        '.project-item',
+                        '[class*="project-row"]',
+                        '.job-item',
+                        '.list-item',
+                        '[data-id]',
+                        '.job-list .job',
+                        '.project-list .project',
+                        '.search-result-item',
+                        '.job-card',
+                        'article',
+                        '[class*="job"]',
+                        '[class*="project"]'
+                    ];
+
+                    let foundElements: any = null;
+                    let usedSelector = '';
+
+                    for (const selector of selectors) {
+                        const elements = (globalThis as any).document.querySelectorAll(selector);
+                        if (elements.length > 0) {
+                            foundElements = elements;
+                            usedSelector = selector;
+                            console.log(`✅ 案件要素発見: ${selector} (${elements.length}件)`);
+                            break;
+                        }
+                    }
+
+                    if (!foundElements) {
+                        // 全体的なDOM構造をデバッグ出力
+                        const bodyClasses = (globalThis as any).document.body.className;
+                        const mainContent = (globalThis as any).document.querySelector('main, #main, .main, .content, .container');
+                        const allDivs = (globalThis as any).document.querySelectorAll('div[class*="search"], div[class*="result"], div[class*="job"], div[class*="project"]');
+
+                        console.log(`🔍 デバッグ情報:`);
+                        console.log(`   Body classes: ${bodyClasses}`);
+                        console.log(`   Main content: ${mainContent ? 'found' : 'not found'}`);
+                        console.log(`   Related divs: ${allDivs.length}件`);
+
+                        return 0;
+                    }
+
+                    return foundElements.length;
+                });
+
+                console.log(`🔢 発見した案件数: ${jobCount}件`);
+
+                if (jobCount > 0) {
+                    // サンプル案件情報を取得（最初の3件）
+                    const sampleJobs = await page.evaluate(() => {
+                        const jobElements = (globalThis as any).document.querySelectorAll('.search_result .project_row, .project-item, [class*="project-row"]');
+                        const samples: any[] = [];
+
+                        for (let i = 0; i < Math.min(jobElements.length, 3); i++) {
+                            const jobElement = jobElements[i];
+                            const titleElement = jobElement.querySelector('.project_title a, .job-title a, a[class*="title"], h3 a, h2 a');
+                            const title = titleElement?.textContent?.trim() || `案件${i + 1}`;
+
+                            const dateElement = jobElement.querySelector('.posted_date, .date, .post-date');
+                            const postedAt = dateElement?.textContent?.trim() || '投稿日不明';
+
+                            samples.push({ title, postedAt });
+                        }
+
+                        return samples;
+                    });
+
+                    console.log('📝 サンプル案件（新着順）:');
+                    sampleJobs.forEach((job, index) => {
+                        console.log(`   ${index + 1}. ${job.title} (投稿: ${job.postedAt})`);
+                    });
+
+                } else {
+                    console.log('⚠️ 案件が見つかりませんでした');
+                }
+
+            } catch (extractError) {
+                console.error('❌ 案件データ抽出エラー:', extractError);
+            }
+
+            // 次のカテゴリ処理前に少し待機
+            console.log(`✅ カテゴリ「${category}」処理完了\n`);
+            await page.waitForTimeout(2000);
+        }
+
+        await context.close();
+
+        const executionTime = Date.now() - startTime;
+        console.log(`🎉 CrowdWorksカテゴリスクレイピングテスト完了！`);
+        console.log(`⏱️ 総実行時間: ${executionTime}ms`);
+
+    } catch (error) {
+        const executionTime = Date.now() - startTime;
+        console.error('❌ テスト失敗:', error);
+        console.log(`⏱️ 実行時間: ${executionTime}ms`);
+    } finally {
+        if (browser) {
+            await browser.close();
+            console.log('🔒 ブラウザクリーンアップ完了');
+        }
+    }
+}
+
+// テストタイプの判定
+const testType = process.env['TEST_TYPE'] || 'category';
+
+async function main() {
+    console.log('🌟 === CrowdWorks スクレイピングテスト ===');
+    console.log(`🔧 テストタイプ: ${testType}`);
+    console.log(`📅 実行日時: ${new Date().toISOString()}`);
+    console.log('');
+
+    switch (testType) {
+        case 'category':
+            await testCrowdWorksCategoryScraping();
+            break;
+        default:
+            console.error(`❌ 不明なテストタイプ: ${testType}`);
+            console.log('利用可能なテストタイプ: category');
+            process.exit(1);
+    }
+}
+
+// スクリプト実行時のメイン処理
+if (require.main === module) {
+    main().catch((error) => {
+        console.error('❌ メイン処理でエラーが発生しました:', error);
+        process.exit(1);
+    });
 } 

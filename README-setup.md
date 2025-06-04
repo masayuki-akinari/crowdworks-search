@@ -61,6 +61,52 @@ aws ssm get-parameter \
   --region ap-northeast-1
 ```
 
+## 🎭 Playwright設定
+
+### ローカル環境でのPlaywright設定
+
+**重要**: ローカル環境では通常 `PLAYWRIGHT_BROWSERS_PATH` を設定する必要はありません。
+
+1. **Playwrightブラウザインストール**:
+```bash
+# Chromiumブラウザインストール
+npx playwright install chromium
+
+# 全ブラウザインストール（必要に応じて）
+npx playwright install
+
+# システム依存関係もインストール
+npx playwright install-deps
+```
+
+2. **環境変数設定（通常は不要）**:
+```bash
+# .env ファイルでの設定例
+PLAYWRIGHT_BROWSERS_PATH=
+PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=0
+```
+
+### 環境別のPlaywright設定
+
+| 環境 | PLAYWRIGHT_BROWSERS_PATH | PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD | 説明 |
+|------|-------------------------|-----------------------------------|------|
+| **ローカル** | `空` または未設定 | `0` (ダウンロードする) | Playwrightが自動でブラウザを管理 |
+| **Lambda Container** | `/usr/bin` | `1` (スキップ) | システムインストール済みChromiumを使用 |
+| **CI/CD** | `空` または未設定 | `0` (ダウンロードする) | テスト用ブラウザをインストール |
+
+### Playwrightブラウザの場所確認
+
+```bash
+# インストール場所確認
+npx playwright --version
+
+# Windowsの通常のインストール場所:
+# C:\Users\{ユーザー名}\AppData\Local\ms-playwright\chromium-{バージョン}
+
+# ブラウザが正常にインストールされているか確認
+npx playwright list-files chromium
+```
+
 ## 🧪 ローカルテスト実行
 
 ### 1. 依存関係インストール
@@ -68,12 +114,17 @@ aws ssm get-parameter \
 npm install
 ```
 
-### 2. TypeScriptビルド
+### 2. Playwrightブラウザインストール
+```bash
+npx playwright install chromium
+```
+
+### 3. TypeScriptビルド
 ```bash
 npm run build
 ```
 
-### 3. CrowdWorksログインテスト
+### 4. CrowdWorksログインテスト
 ```bash
 # 環境変数から認証情報取得
 npm run test:login:local
@@ -82,7 +133,7 @@ npm run test:login:local
 npx ts-node src/test/crowdworks-scraping-test.ts
 ```
 
-### 4. テスト結果確認
+### 5. テスト結果確認
 ```
 🚀 CrowdWorksログインテスト開始...
 🔐 CrowdWorks認証情報を取得中...
@@ -135,6 +186,33 @@ npx playwright install chromium
 
 # 依存関係確認
 npx playwright install-deps
+
+# ブラウザ場所確認
+where chromium  # Windows
+which chromium  # Linux/Mac
+
+# Playwrightがブラウザを見つけられない場合の詳細確認
+npx playwright --help
+```
+
+### よくあるPlaywrightエラー
+
+1. **"Browser not found"エラー**:
+```bash
+# 解決方法
+npx playwright install chromium
+```
+
+2. **"PLAYWRIGHT_BROWSERS_PATH"が無効**:
+```bash
+# .env ファイルで空に設定または削除
+PLAYWRIGHT_BROWSERS_PATH=
+```
+
+3. **権限エラー（Linux/WSL）**:
+```bash
+# 依存関係インストール
+sudo npx playwright install-deps
 ```
 
 ## 📁 生成されるファイル
