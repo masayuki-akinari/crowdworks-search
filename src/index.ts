@@ -33,8 +33,8 @@ async function main(): Promise<void> {
         };
 
         console.log('🚀 CrowdWorks Search System - Development Mode');
-        console.log(`Environment: ${process.env.NODE_ENV}`);
-        console.log(`AWS Region: ${process.env.AWS_REGION}`);
+        console.log(`Environment: ${process.env['NODE_ENV']}`);
+        console.log(`AWS Region: ${process.env['AWS_REGION']}`);
         console.log(`Execution ID: ${log.executionId}`);
 
         // TODO: 実際の処理を実装

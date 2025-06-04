@@ -40,17 +40,878 @@ The content is organized as follows:
 </file_summary>
 
 <directory_structure>
+.dockerignore
+.eslintrc.js
+.github/workflows/ci.yml
+.prettierrc
+app.ts
+cdk.json
+docker-compose.yml
+Dockerfile
 docs/01_requirements.md
 docs/02_system_design.md
 docs/03_data_design.md
 docs/04_api_design.md
 docs/05_implementation_plan.md
 docs/README.md
+jest.config.js
+package.json
 readme.md
+src/index.ts
+src/infrastructure/crowdworks-searcher-stack.ts
+src/lambda/handler.ts
+src/types/index.ts
+test/sample.test.ts
+test/setup.ts
+tsconfig.json
 </directory_structure>
 
 <files>
 This section contains the contents of the repository's files.
+
+<file path="app.ts">
+#!/usr/bin/env node
+import 'source-map-support/register';
+import * as cdk from 'aws-cdk-lib';
+import { CrowdWorksSearcherStack } from './src/infrastructure/crowdworks-searcher-stack';
+
+const app = new cdk.App();
+
+// 環境設定
+const env = {
+    account: process.env.CDK_DEFAULT_ACCOUNT,
+    region: process.env.CDK_DEFAULT_REGION || process.env.AWS_REGION || 'ap-northeast-1',
+};
+
+// スタック作成
+new CrowdWorksSearcherStack(app, 'CrowdWorksSearcherStack', {
+    env,
+    description: 'CrowdWorks Auto Job Searcher System',
+});
+</file>
+
+<file path="cdk.json">
+{
+    "app": "npx ts-node --prefer-ts-exts app.ts",
+    "watch": {
+        "include": [
+            "**"
+        ],
+        "exclude": [
+            "README.md",
+            "cdk*.json",
+            "**/*.d.ts",
+            "**/*.js",
+            "tsconfig.json",
+            "package*.json",
+            "yarn.lock",
+            "node_modules",
+            "test"
+        ]
+    },
+    "context": {
+        "@aws-cdk/aws-lambda:recognizeLayerVersion": true,
+        "@aws-cdk/core:checkSecretUsage": true,
+        "@aws-cdk/core:target-partitions": [
+            "aws",
+            "aws-cn"
+        ],
+        "@aws-cdk-containers/ecs-service-extensions:enableDefaultLogDriver": true,
+        "@aws-cdk/aws-ec2:uniqueImdsv2TemplateName": true,
+        "@aws-cdk/aws-ecs:arnFormatIncludesClusterName": true,
+        "@aws-cdk/aws-iam:minimizePolicies": true,
+        "@aws-cdk/core:validateSnapshotRemovalPolicy": true,
+        "@aws-cdk/aws-codepipeline:crossAccountKeyAliasStackSafeResourceName": true,
+        "@aws-cdk/aws-s3:createDefaultLoggingPolicy": true,
+        "@aws-cdk/aws-sns-subscriptions:restrictSqsDescryption": true,
+        "@aws-cdk/aws-apigateway:disableCloudWatchRole": true,
+        "@aws-cdk/core:enablePartitionLiterals": true,
+        "@aws-cdk/aws-events:eventsTargetQueueSameAccount": true,
+        "@aws-cdk/aws-iam:standardizedServicePrincipals": true,
+        "@aws-cdk/aws-ecs:disableExplicitDeploymentControllerForCircuitBreaker": true,
+        "@aws-cdk/aws-iam:importedRoleStackSafeDefaultPolicyName": true,
+        "@aws-cdk/aws-s3:serverAccessLogsUseBucketPolicy": true,
+        "@aws-cdk/aws-route53-patters:useCertificate": true,
+        "@aws-cdk/customresources:installLatestAwsSdkDefault": false,
+        "@aws-cdk/aws-rds:databaseProxyUniqueResourceName": true,
+        "@aws-cdk/aws-codedeploy:removeAlarmsFromDeploymentGroup": true,
+        "@aws-cdk/aws-apigateway:authorizerChangeDeploymentLogicalId": true,
+        "@aws-cdk/aws-ec2:launchTemplateDefaultUserData": true,
+        "@aws-cdk/aws-secretsmanager:useAttachedSecretResourcePolicyForSecretTargetAttachments": true,
+        "@aws-cdk/aws-redshift:columnId": true,
+        "@aws-cdk/aws-stepfunctions-tasks:enableLoggingForLambdaTask": true,
+        "@aws-cdk/aws-ec2:restrictDefaultSecurityGroup": true,
+        "@aws-cdk/aws-apigateway:requestValidatorUniqueId": true,
+        "@aws-cdk/aws-kms:aliasNameRef": true,
+        "@aws-cdk/aws-autoscaling:generateLaunchTemplateInsteadOfLaunchConfig": true,
+        "@aws-cdk/core:includePrefixInUniqueNameGeneration": true,
+        "@aws-cdk/aws-efs:denyAnonymousAccess": true,
+        "@aws-cdk/aws-opensearchservice:enableOpensearchMultiAzWithStandby": true,
+        "@aws-cdk/aws-lambda-nodejs:useLatestRuntimeVersion": true,
+        "@aws-cdk/aws-efs:mountTargetOrderInsensitiveLogicalId": true,
+        "@aws-cdk/aws-rds:auroraClusterChangeScopeOfInstanceParameterGroupWithEachParameters": true,
+        "@aws-cdk/aws-appsync:useArnForSourceApiAssociationIdentifier": true,
+        "@aws-cdk/aws-rds:preventRenderingDeprecatedCredentials": true,
+        "@aws-cdk/aws-codepipeline-actions:useNewDefaultBranchForSourceAction": true
+    }
+}
+</file>
+
+<file path="src/infrastructure/crowdworks-searcher-stack.ts">
+import * as cdk from 'aws-cdk-lib';
+import * as lambda from 'aws-cdk-lib/aws-lambda';
+import * as s3 from 'aws-cdk-lib/aws-s3';
+import * as events from 'aws-cdk-lib/aws-events';
+import * as targets from 'aws-cdk-lib/aws-events-targets';
+import * as iam from 'aws-cdk-lib/aws-iam';
+import { Construct } from 'constructs';
+
+export class CrowdWorksSearcherStack extends cdk.Stack {
+    constructor(scope: Construct, id: string, props?: cdk.StackProps) {
+        super(scope, id, props);
+
+        // S3バケット（データ保存用）
+        const dataBucket = new s3.Bucket(this, 'CrowdWorksDataBucket', {
+            bucketName: `crowdworks-searcher-data-${this.account}`,
+            encryption: s3.BucketEncryption.S3_MANAGED,
+            blockPublicAccess: s3.BlockPublicAccess.BLOCK_ALL,
+            lifecycleRules: [
+                {
+                    id: 'DeleteOldData',
+                    enabled: true,
+                    expiration: cdk.Duration.days(7),
+                }
+            ],
+            removalPolicy: cdk.RemovalPolicy.DESTROY,
+            autoDeleteObjects: true,
+        });
+
+        // Lambda実行ロール
+        const lambdaRole = new iam.Role(this, 'LambdaExecutionRole', {
+            assumedBy: new iam.ServicePrincipal('lambda.amazonaws.com'),
+            managedPolicies: [
+                iam.ManagedPolicy.fromAwsManagedPolicyName('service-role/AWSLambdaBasicExecutionRole')
+            ],
+            inlinePolicies: {
+                S3Access: new iam.PolicyDocument({
+                    statements: [
+                        new iam.PolicyStatement({
+                            effect: iam.Effect.ALLOW,
+                            actions: [
+                                's3:GetObject',
+                                's3:PutObject',
+                                's3:ListBucket'
+                            ],
+                            resources: [
+                                dataBucket.bucketArn,
+                                `${dataBucket.bucketArn}/*`
+                            ]
+                        })
+                    ]
+                })
+            }
+        });
+
+        // Lambda関数（基本版）
+        const mainFunction = new lambda.Function(this, 'CrowdWorksMainFunction', {
+            runtime: lambda.Runtime.NODEJS_18_X,
+            handler: 'lambda/handler.lambdaHandler',
+            code: lambda.Code.fromAsset('./dist'),
+            timeout: cdk.Duration.minutes(10),
+            memorySize: 1024,
+            role: lambdaRole,
+            environment: {
+                DATA_BUCKET_NAME: dataBucket.bucketName,
+                AWS_REGION: this.region,
+            },
+        });
+
+        // EventBridge（スケジューラー）
+        const scheduleRule = new events.Rule(this, 'ScheduleRule', {
+            schedule: events.Schedule.rate(cdk.Duration.minutes(15)),
+            description: 'CrowdWorks案件検索の定期実行（15分間隔）',
+        });
+
+        scheduleRule.addTarget(new targets.LambdaFunction(mainFunction));
+
+        // 出力
+        new cdk.CfnOutput(this, 'DataBucketName', {
+            value: dataBucket.bucketName,
+            description: 'S3データバケット名',
+        });
+
+        new cdk.CfnOutput(this, 'LambdaFunctionName', {
+            value: mainFunction.functionName,
+            description: 'Lambda関数名',
+        });
+    }
+}
+</file>
+
+<file path=".dockerignore">
+# Dependencies
+node_modules
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Build outputs
+dist
+build
+*.tsbuildinfo
+
+# Coverage directory used by tools like istanbul
+coverage
+
+# CDK outputs
+cdk.out
+
+# Environment variables
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# IDE files
+.vscode
+.idea
+*.swp
+*.swo
+*~
+
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Git
+.git
+.gitignore
+
+# Docker
+Dockerfile*
+docker-compose*
+.dockerignore
+
+# Documentation
+docs
+*.md
+repomix-output.xml
+
+# Test files
+test
+*.test.ts
+*.spec.ts
+__tests__
+
+# Logs
+logs
+*.log
+
+# Runtime data
+pids
+*.pid
+*.seed
+*.pid.lock
+
+# Optional npm cache directory
+.npm
+
+# Optional eslint cache
+.eslintcache
+
+# Temporary folders
+tmp
+temp
+</file>
+
+<file path=".eslintrc.js">
+module.exports = {
+    parser: '@typescript-eslint/parser',
+    parserOptions: {
+        ecmaVersion: 2022,
+        sourceType: 'module',
+        project: './tsconfig.json',
+    },
+    plugins: [
+        '@typescript-eslint',
+        'import',
+        'jest'
+    ],
+    extends: [
+        'eslint:recommended',
+        '@typescript-eslint/recommended',
+        '@typescript-eslint/recommended-requiring-type-checking',
+        'prettier'
+    ],
+    env: {
+        node: true,
+        es2022: true,
+        jest: true
+    },
+    rules: {
+        // any型を厳格に禁止
+        '@typescript-eslint/no-explicit-any': 'error',
+        '@typescript-eslint/no-unsafe-any': 'error',
+        '@typescript-eslint/no-unsafe-assignment': 'error',
+        '@typescript-eslint/no-unsafe-call': 'error',
+        '@typescript-eslint/no-unsafe-member-access': 'error',
+        '@typescript-eslint/no-unsafe-return': 'error',
+        '@typescript-eslint/no-unsafe-argument': 'error',
+
+        // TypeScript strict mode 関連
+        '@typescript-eslint/no-unused-vars': ['error', {
+            argsIgnorePattern: '^_',
+            varsIgnorePattern: '^_'
+        }],
+        '@typescript-eslint/explicit-function-return-type': 'warn',
+        '@typescript-eslint/explicit-module-boundary-types': 'warn',
+        '@typescript-eslint/no-non-null-assertion': 'error',
+        '@typescript-eslint/prefer-nullish-coalescing': 'error',
+        '@typescript-eslint/prefer-optional-chain': 'error',
+        '@typescript-eslint/strict-boolean-expressions': 'error',
+
+        // コード品質
+        '@typescript-eslint/no-floating-promises': 'error',
+        '@typescript-eslint/await-thenable': 'error',
+        '@typescript-eslint/require-await': 'error',
+        '@typescript-eslint/return-await': 'error',
+
+        // import関連
+        'import/order': ['error', {
+            'groups': [
+                'builtin',
+                'external',
+                'internal',
+                'parent',
+                'sibling',
+                'index'
+            ],
+            'newlines-between': 'always',
+            'alphabetize': {
+                'order': 'asc',
+                'caseInsensitive': true
+            }
+        }],
+        'import/no-unresolved': 'off', // TypeScript handles this
+
+        // General rules
+        'no-console': 'warn',
+        'no-debugger': 'error',
+        'prefer-const': 'error',
+        'no-var': 'error',
+
+        // Jest specific rules
+        'jest/no-disabled-tests': 'warn',
+        'jest/no-focused-tests': 'error',
+        'jest/no-identical-title': 'error',
+        'jest/prefer-to-have-length': 'warn',
+        'jest/valid-expect': 'error'
+    },
+    overrides: [
+        {
+            files: ['**/*.test.ts', '**/*.spec.ts'],
+            env: {
+                jest: true
+            },
+            rules: {
+                '@typescript-eslint/no-non-null-assertion': 'off',
+                '@typescript-eslint/explicit-function-return-type': 'off'
+            }
+        },
+        {
+            files: ['src/infrastructure/**/*.ts'],
+            rules: {
+                // CDK constructs may need looser rules
+                '@typescript-eslint/explicit-function-return-type': 'off'
+            }
+        }
+    ],
+    ignorePatterns: [
+        'dist/',
+        'node_modules/',
+        'cdk.out/',
+        '*.js',
+        '*.d.ts'
+    ]
+};
+</file>
+
+<file path=".github/workflows/ci.yml">
+name: CI/CD Pipeline
+
+on:
+  push:
+    branches: [ main, develop ]
+    tags: [ 'v*' ]
+  pull_request:
+    branches: [ main, develop ]
+
+env:
+  NODE_VERSION: '18'
+  AWS_REGION: 'ap-northeast-1'
+
+jobs:
+  # コード品質チェック（最速実行）
+  code-quality:
+    name: Code Quality Check
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Lint check
+        run: npm run lint
+
+      - name: Format check
+        run: npm run format -- --check
+
+      - name: TypeScript type check
+        run: npm run type-check
+
+  # 単体テスト（Docker環境）
+  unit-tests:
+    name: Unit Tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    needs: code-quality
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Build Docker image for testing
+        run: |
+          docker build -t crowdworks-search:test .
+
+      - name: Run unit tests in Docker
+        run: |
+          docker run --rm \
+            -v ${{ github.workspace }}:/workspace \
+            -e NODE_ENV=test \
+            -e AWS_REGION=${{ env.AWS_REGION }} \
+            crowdworks-search:test \
+            npm run test:coverage
+
+      - name: Upload coverage reports
+        uses: codecov/codecov-action@v3
+        if: always()
+        with:
+          file: ./coverage/lcov.info
+          flags: unittests
+          name: codecov-umbrella
+
+  # ビルドテスト
+  build-test:
+    name: Build Test
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    needs: code-quality
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build TypeScript
+        run: npm run build
+
+      - name: Verify build output
+        run: |
+          if [ ! -d "dist" ]; then
+            echo "Build failed: dist directory not found"
+            exit 1
+          fi
+          if [ ! -f "dist/index.js" ]; then
+            echo "Build failed: main output file not found"
+            exit 1
+          fi
+          echo "✅ Build verification passed"
+
+  # CDK構文チェック
+  cdk-synth:
+    name: CDK Synth Check
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    needs: code-quality
+    if: github.event_name == 'push' || github.event_name == 'pull_request'
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build TypeScript
+        run: npm run build
+
+      - name: CDK Synth (dry-run)
+        run: npm run cdk:synth
+        env:
+          CDK_DEFAULT_REGION: ${{ env.AWS_REGION }}
+
+  # セキュリティスキャン
+  security-scan:
+    name: Security Scan
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    needs: code-quality
+    if: github.event_name == 'push'
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Run npm audit
+        run: npm audit --audit-level=high
+        continue-on-error: true
+
+      - name: Run CodeQL Analysis
+        uses: github/codeql-action/init@v2
+        with:
+          languages: javascript
+
+      - name: Perform CodeQL Analysis
+        uses: github/codeql-action/analyze@v2
+
+  # 統合テスト（Docker環境）
+  integration-tests:
+    name: Integration Tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    needs: [unit-tests, build-test]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Build test environment
+        run: |
+          docker-compose build test
+
+      - name: Run integration tests
+        run: |
+          docker-compose --profile test run --rm test npm run test:integration
+
+  # Staging環境デプロイ
+  deploy-staging:
+    name: Deploy to Staging
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    needs: [unit-tests, build-test, cdk-synth]
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.STAGING_AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.STAGING_AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build application
+        run: npm run build
+
+      - name: Deploy to staging
+        run: |
+          npm run cdk:deploy -- --require-approval never --context stage=staging
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          CROWDWORKS_EMAIL: ${{ secrets.CROWDWORKS_EMAIL }}
+          CROWDWORKS_PASSWORD: ${{ secrets.CROWDWORKS_PASSWORD }}
+
+      - name: Run smoke tests
+        run: |
+          # 基本的なヘルスチェック
+          echo "🧪 Running staging smoke tests..."
+          # TODO: 実際のスモークテストを実装
+
+  # Production環境デプロイ（手動承認）
+  deploy-production:
+    name: Deploy to Production
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    needs: [deploy-staging, integration-tests]
+    if: startsWith(github.ref, 'refs/tags/v')
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.PRODUCTION_AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.PRODUCTION_AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build application
+        run: npm run build
+
+      - name: Deploy to production
+        run: |
+          npm run cdk:deploy -- --require-approval never --context stage=production
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          CROWDWORKS_EMAIL: ${{ secrets.CROWDWORKS_EMAIL }}
+          CROWDWORKS_PASSWORD: ${{ secrets.CROWDWORKS_PASSWORD }}
+
+      - name: Post-deployment verification
+        run: |
+          echo "🚀 Production deployment completed"
+          echo "Tag: ${{ github.ref }}"
+          echo "Commit: ${{ github.sha }}"
+
+  # 通知（失敗時のみ）
+  notify-failure:
+    name: Notify Failure
+    runs-on: ubuntu-latest
+    needs: [code-quality, unit-tests, build-test, cdk-synth]
+    if: failure()
+    
+    steps:
+      - name: Notify failure
+        run: |
+          echo "❌ CI/CD Pipeline failed"
+          echo "Branch: ${{ github.ref }}"
+          echo "Commit: ${{ github.sha }}"
+          echo "Actor: ${{ github.actor }}"
+          # TODO: Slack通知などを実装
+</file>
+
+<file path=".prettierrc">
+{
+    "semi": true,
+    "trailingComma": "es5",
+    "singleQuote": true,
+    "printWidth": 100,
+    "tabWidth": 2,
+    "useTabs": false,
+    "bracketSpacing": true,
+    "arrowParens": "avoid",
+    "endOfLine": "lf",
+    "quoteProps": "as-needed",
+    "bracketSameLine": false,
+    "embeddedLanguageFormatting": "auto"
+}
+</file>
+
+<file path="docker-compose.yml">
+version: '3.8'
+
+services:
+  # メイン開発環境
+  crowdworks-search:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: development  # 開発用ステージを使用
+    container_name: crowdworks-search-dev
+    volumes:
+      # ソースコードのマウント（リアルタイム開発用）
+      - .:/workspace
+      - /workspace/node_modules  # node_modulesは除外
+      - /workspace/dist          # distは除外
+      # AWS認証情報のマウント（必要に応じて）
+      - ~/.aws:/root/.aws:ro
+    environment:
+      # 開発環境用の環境変数
+      - NODE_ENV=development
+      - AWS_REGION=ap-northeast-1
+      - LOG_LEVEL=debug
+      # Playwright設定
+      - PLAYWRIGHT_BROWSERS_PATH=/ms-playwright
+    ports:
+      - "3000:3000"  # 将来的なAPI Gateway Local用
+      - "9229:9229"  # Node.js デバッグポート
+    working_dir: /workspace
+    # 開発用のコマンドオーバーライド
+    command: tail -f /dev/null  # コンテナを起動状態で維持
+    stdin_open: true
+    tty: true
+
+  # テスト実行専用コンテナ
+  test:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: development
+    container_name: crowdworks-search-test
+    volumes:
+      - .:/workspace
+      - /workspace/node_modules
+      - /workspace/dist
+    environment:
+      - NODE_ENV=test
+      - AWS_REGION=ap-northeast-1
+    working_dir: /workspace
+    command: npm run test:coverage
+    profiles:
+      - test  # docker-compose --profile test up で実行
+
+  # AWS CDK専用コンテナ
+  cdk:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: development
+    container_name: crowdworks-search-cdk
+    volumes:
+      - .:/workspace
+      - /workspace/node_modules
+      - /workspace/cdk.out
+      - ~/.aws:/root/.aws:ro
+    environment:
+      - AWS_REGION=ap-northeast-1
+      - CDK_DEFAULT_REGION=ap-northeast-1
+    working_dir: /workspace
+    command: tail -f /dev/null
+    profiles:
+      - cdk  # docker-compose --profile cdk up で実行
+
+  # 本番環境テスト用（Lambda環境シミュレーション）
+  lambda-test:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: production
+    container_name: crowdworks-search-lambda
+    environment:
+      - AWS_LAMBDA_RUNTIME_API=localhost:9000
+      - _HANDLER=dist/lambda/handler.lambdaHandler
+    ports:
+      - "9000:8080"  # Lambda Runtime Interface Emulator
+    profiles:
+      - lambda  # docker-compose --profile lambda up で実行
+
+networks:
+  default:
+    name: crowdworks-search-network
+</file>
+
+<file path="Dockerfile">
+# Lambda環境に近いAmazon Linux 2ベース（Node.js 18）
+FROM public.ecr.aws/lambda/nodejs:18 as base
+
+# 開発ツールをインストール
+USER root
+
+# 必要なシステムパッケージのインストール
+RUN dnf update -y && \
+    dnf install -y \
+    git \
+    tar \
+    gzip \
+    unzip \
+    which \
+    procps \
+    && dnf clean all
+
+# AWS CLI v2のインストール
+RUN curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip" && \
+    unzip awscliv2.zip && \
+    ./aws/install && \
+    rm -rf awscliv2.zip aws
+
+# AWS CDK CLIのグローバルインストール
+RUN npm install -g aws-cdk@latest
+
+# 作業ディレクトリの設定
+WORKDIR /workspace
+
+# package.jsonとpackage-lock.jsonをコピー（依存関係のキャッシュ効率化）
+COPY package*.json ./
+
+# 依存関係のインストール
+RUN npm ci
+
+# Playwrightブラウザのインストール（Lambda Layer用）
+RUN npx playwright install --with-deps chromium
+
+# === 開発用ステージ ===
+FROM base as development
+
+# 開発用の追加パッケージ
+RUN npm install -g nodemon ts-node
+
+# アプリケーションのソースコードをコピー
+COPY . .
+
+# TypeScriptのビルド
+RUN npm run build
+
+# 開発用ポートを公開（将来的なAPI Gateway Local用）
+EXPOSE 3000
+
+# 開発用のデフォルトコマンド
+CMD ["npm", "run", "dev"]
+
+# === 本番用ステージ ===
+FROM base as production
+
+# 本番用の最小限パッケージのみインストール
+COPY package*.json ./
+RUN npm ci --only=production && npm cache clean --force
+
+# ビルド済みアプリケーションをコピー
+COPY --from=development /workspace/dist ./dist
+
+# Lambda関数ハンドラーの設定
+CMD ["dist/lambda/handler.lambdaHandler"]
+</file>
 
 <file path="docs/README.md">
 # 設計書インデックス
@@ -87,6 +948,772 @@ This section contains the contents of the repository's files.
 | 日付 | 更新者 | 更新内容 |
 |------|--------|----------|
 |      |        |          |
+</file>
+
+<file path="jest.config.js">
+module.exports = {
+    // テスト環境
+    preset: 'ts-jest',
+    testEnvironment: 'node',
+
+    // TypeScript設定
+    transform: {
+        '^.+\\.tsx?$': ['ts-jest', {
+            tsconfig: './tsconfig.json',
+            isolatedModules: true
+        }]
+    },
+
+    // ファイル拡張子の設定
+    moduleFileExtensions: ['ts', 'tsx', 'js', 'jsx', 'json'],
+
+    // パスマッピング（tsconfig.jsonと同期）
+    moduleNameMapping: {
+        '^@/(.*)$': '<rootDir>/src/$1',
+        '^@/types/(.*)$': '<rootDir>/src/types/$1',
+        '^@/services/(.*)$': '<rootDir>/src/services/$1',
+        '^@/utils/(.*)$': '<rootDir>/src/utils/$1',
+        '^@/infrastructure/(.*)$': '<rootDir>/src/infrastructure/$1'
+    },
+
+    // テストファイルのパターン
+    testMatch: [
+        '<rootDir>/src/**/*.test.(ts|tsx)',
+        '<rootDir>/src/**/*.spec.(ts|tsx)',
+        '<rootDir>/test/**/*.test.(ts|tsx)',
+        '<rootDir>/test/**/*.spec.(ts|tsx)'
+    ],
+
+    // カバレッジ設定
+    collectCoverage: false, // デフォルトでは無効（npm run test:coverageで有効）
+    collectCoverageFrom: [
+        'src/**/*.{ts,tsx}',
+        '!src/**/*.d.ts',
+        '!src/**/*.test.{ts,tsx}',
+        '!src/**/*.spec.{ts,tsx}',
+        '!src/test/**/*',
+        '!src/types/**/*', // 型定義はカバレッジから除外
+    ],
+    coverageDirectory: 'coverage',
+    coverageReporters: ['text', 'lcov', 'html'],
+    coverageThreshold: {
+        global: {
+            branches: 75,
+            functions: 80,
+            lines: 80,
+            statements: 80
+        }
+    },
+
+    // セットアップファイル
+    setupFilesAfterEnv: ['<rootDir>/test/setup.ts'],
+
+    // モック設定
+    clearMocks: true,
+    resetMocks: true,
+    restoreMocks: true,
+
+    // タイムアウト設定
+    testTimeout: 30000, // 30秒（AWS SDK呼び出しなど時間がかかる場合に対応）
+
+    // 並列実行設定
+    maxWorkers: '50%', // CPUコア数の50%で並列実行
+
+    // エラー表示設定
+    verbose: true,
+    errorOnDeprecated: true,
+
+    // 不要なログを抑制
+    silent: false,
+
+    // Jest環境での警告を抑制
+    globals: {
+        'ts-jest': {
+            useESM: false,
+            tsconfig: './tsconfig.json'
+        }
+    },
+
+    // テスト実行前後のフック
+    globalSetup: undefined,
+    globalTeardown: undefined
+};
+</file>
+
+<file path="package.json">
+{
+    "name": "crowdworks-search",
+    "version": "1.0.0",
+    "description": "クラウドワークス案件自動検索・評価システム",
+    "main": "dist/index.js",
+    "scripts": {
+        "build": "tsc",
+        "build:watch": "tsc --watch",
+        "clean": "rimraf dist",
+        "lint": "eslint 'src/**/*.ts'",
+        "lint:fix": "eslint 'src/**/*.ts' --fix",
+        "format": "prettier --write 'src/**/*.ts'",
+        "type-check": "tsc --noEmit",
+        "test": "jest",
+        "test:watch": "jest --watch",
+        "test:coverage": "jest --coverage",
+        "test:integration": "jest --testPathPattern=integration",
+        "test:e2e": "jest --testPathPattern=e2e",
+        "cdk:synth": "cdk synth",
+        "cdk:deploy": "cdk deploy",
+        "cdk:destroy": "cdk destroy",
+        "cdk:diff": "cdk diff",
+        "dev": "ts-node src/index.ts",
+        "start": "node dist/index.js",
+        "prepare": "husky install"
+    },
+    "keywords": [
+        "crowdworks",
+        "automation",
+        "scraping",
+        "aws",
+        "serverless",
+        "typescript"
+    ],
+    "author": "Your Name",
+    "license": "MIT",
+    "private": true,
+    "engines": {
+        "node": ">=18.0.0",
+        "npm": ">=8.0.0"
+    },
+    "dependencies": {
+        "aws-cdk-lib": "^2.110.0",
+        "constructs": "^10.3.0",
+        "aws-sdk": "^2.1490.0",
+        "@aws-sdk/client-s3": "^3.450.0",
+        "@aws-sdk/client-lambda": "^3.450.0",
+        "@aws-sdk/client-ssm": "^3.450.0",
+        "@aws-sdk/client-sns": "^3.450.0",
+        "playwright": "^1.40.0",
+        "openai": "^4.20.0",
+        "zod": "^3.22.0",
+        "source-map-support": "^0.5.21"
+    },
+    "devDependencies": {
+        "@types/node": "^20.8.0",
+        "@types/jest": "^29.5.0",
+        "@types/aws-lambda": "^8.10.0",
+        "@typescript-eslint/eslint-plugin": "^6.8.0",
+        "@typescript-eslint/parser": "^6.8.0",
+        "aws-cdk": "^2.110.0",
+        "eslint": "^8.51.0",
+        "eslint-config-prettier": "^9.0.0",
+        "eslint-plugin-import": "^2.28.0",
+        "eslint-plugin-jest": "^27.4.0",
+        "jest": "^29.7.0",
+        "prettier": "^3.0.0",
+        "rimraf": "^5.0.0",
+        "ts-jest": "^29.1.0",
+        "ts-node": "^10.9.0",
+        "typescript": "^5.2.0",
+        "husky": "^8.0.0",
+        "lint-staged": "^15.0.0",
+        "aws-sdk-client-mock": "^3.0.0",
+        "nock": "^13.3.0",
+        "tsconfig-paths": "^4.2.0"
+    },
+    "husky": {
+        "hooks": {
+            "pre-commit": "lint-staged",
+            "pre-push": "npm run type-check && npm run test"
+        }
+    },
+    "lint-staged": {
+        "src/**/*.{ts,tsx}": [
+            "eslint --fix",
+            "prettier --write",
+            "git add"
+        ]
+    }
+}
+</file>
+
+<file path="src/index.ts">
+/**
+ * CrowdWorks Search System - Main Entry Point
+ * Docker環境での開発用エントリーポイント
+ */
+
+import { ExecutionLog } from '@/types';
+
+// 環境変数の検証
+function validateEnvironment(): void {
+    const required = ['NODE_ENV', 'AWS_REGION'];
+    const missing = required.filter(key => !process.env[key]);
+
+    if (missing.length > 0) {
+        throw new Error(`Missing required environment variables: ${missing.join(', ')}`);
+    }
+}
+
+// メイン実行関数
+async function main(): Promise<void> {
+    try {
+        validateEnvironment();
+
+        const log: ExecutionLog = {
+            executionId: Date.now().toString(),
+            timestamp: new Date().toISOString(),
+            status: 'success',
+            duration: 0,
+            jobsScraped: 0,
+            newJobs: 0,
+            aiEvaluated: 0,
+            highScoreJobs: 0,
+            costEstimate: 0,
+        };
+
+        console.log('🚀 CrowdWorks Search System - Development Mode');
+        console.log(`Environment: ${process.env.NODE_ENV}`);
+        console.log(`AWS Region: ${process.env.AWS_REGION}`);
+        console.log(`Execution ID: ${log.executionId}`);
+
+        // TODO: 実際の処理を実装
+        console.log('✅ Development setup completed');
+
+    } catch (error) {
+        console.error('❌ Failed to start application:', error);
+        process.exit(1);
+    }
+}
+
+// 開発環境でのみ実行
+if (require.main === module) {
+    main().catch(error => {
+        console.error('Fatal error:', error);
+        process.exit(1);
+    });
+}
+
+export { main };
+</file>
+
+<file path="src/lambda/handler.ts">
+/**
+ * AWS Lambda Handler for CrowdWorks Search System
+ * EventBridge スケジュール実行用のメインハンドラー
+ */
+
+import type { Context } from 'aws-lambda';
+
+import { ScheduledExecutionEvent, ScheduledExecutionResponse } from '@/types';
+
+/**
+ * Lambda関数のメインハンドラー
+ * EventBridgeからのスケジュール実行を処理
+ */
+export const lambdaHandler = async (
+    event: ScheduledExecutionEvent,
+    context: Context
+): Promise<ScheduledExecutionResponse> => {
+    const executionId = Date.now().toString();
+    const startTime = Date.now();
+
+    console.log('🔄 Lambda execution started', {
+        executionId,
+        functionName: context.functionName,
+        remainingTimeInMillis: context.getRemainingTimeInMillis(),
+        eventSource: event.source,
+    });
+
+    try {
+        // TODO: メイン処理の実装
+        const response: ScheduledExecutionResponse = {
+            status: 'success',
+            executionId,
+            timestamp: new Date().toISOString(),
+            results: {
+                jobsScraped: 0,
+                newJobs: 0,
+                aiEvaluated: 0,
+                highScoreJobs: 0,
+                duration: Date.now() - startTime,
+                costEstimate: 0,
+            },
+        };
+
+        console.log('✅ Lambda execution completed', response);
+        return response;
+
+    } catch (error) {
+        const errorResponse: ScheduledExecutionResponse = {
+            status: 'error',
+            executionId,
+            timestamp: new Date().toISOString(),
+            results: {
+                jobsScraped: 0,
+                newJobs: 0,
+                aiEvaluated: 0,
+                highScoreJobs: 0,
+                duration: Date.now() - startTime,
+                costEstimate: 0,
+            },
+            error: {
+                type: error instanceof Error ? error.constructor.name : 'UnknownError',
+                message: error instanceof Error ? error.message : String(error),
+            },
+        };
+
+        console.error('❌ Lambda execution failed', errorResponse);
+        return errorResponse;
+    }
+};
+</file>
+
+<file path="src/types/index.ts">
+// 案件データ型（軽量版）
+export interface JobData {
+    id: string;                    // 案件ID（ユニーク）
+    title: string;                 // 案件タイトル
+    description: string;           // 案件詳細（最大500文字）
+    url: string;                   // 案件URL
+    budget: number;                // 予算（円）
+    deadline: Date;                // 納期
+    workType: 'fixed' | 'hourly'; // 固定報酬 or 時間単価
+    category: string;              // カテゴリ
+    clientName: string;            // クライアント名
+    clientRating: number;          // クライアント評価（1-5）
+    clientReviews: number;         // レビュー数
+    skills: string[];              // 必要スキル（最大5個）
+    experience: 'beginner' | 'intermediate' | 'expert'; // 経験レベル
+    scrapedAt: Date;              // 取得日時
+    source: 'crowdworks';         // 取得元（将来拡張用）
+}
+
+// 評価結果型（軽量版）
+export interface JobEvaluation {
+    jobId: string;                // 対象案件ID
+    evaluatedAt: Date;           // 評価日時
+    score: number;               // おすすめ度（1-10）
+    reason: string;              // 評価理由（最大50文字）
+    aiModel: 'gpt-3.5-turbo';    // 使用AIモデル
+    tokenUsed: number;           // 使用トークン数
+    costEstimate: number;        // 推定コスト（USD）
+    strengths: string[];         // 強み（最大3個）
+    concerns: string[];          // 懸念点（最大3個）
+}
+
+// 実行ログ型
+export interface ExecutionLog {
+    executionId: string;         // 実行ID（タイムスタンプベース）
+    timestamp: string;           // 実行開始時刻（ISO形式）
+    status: 'success' | 'error' | 'partial'; // 実行ステータス
+    duration: number;            // 実行時間（ミリ秒）
+    jobsScraped: number;         // スクレイピング件数
+    newJobs: number;             // 新規案件数
+    aiEvaluated: number;         // AI評価件数
+    highScoreJobs: number;       // 高評価案件数（閾値以上）
+    costEstimate: number;        // 推定コスト（USD）
+    error?: {
+        type: string;              // エラータイプ
+        message: string;           // エラーメッセージ
+        stack?: string;            // スタックトレース
+    };
+}
+
+// システム設定型
+export interface SystemConfig {
+    scraping: {
+        maxJobsPerExecution: number;
+        preFilterEnabled: boolean;
+        minBudget: number;
+        minClientRating: number;
+        maxDescriptionLength: number;
+    };
+    ai: {
+        enabled: boolean;
+        model: 'gpt-3.5-turbo';
+        maxJobsForEvaluation: number;
+        monthlyBudgetLimit: number;
+        maxTokensPerRequest: number;
+        temperature: number;
+    };
+    notification: {
+        enabled: boolean;
+        scoreThreshold: number;
+        errorNotificationEnabled: boolean;
+        dailySummaryEnabled: boolean;
+    };
+    storage: {
+        retentionDays: number;
+        compressionEnabled: boolean;
+        backupEnabled: boolean;
+    };
+    performance: {
+        timeoutSeconds: number;
+        retryCount: number;
+        concurrentLimit: number;
+    };
+}
+
+// 検索条件型
+export interface SearchCondition {
+    id: string;
+    name: string;
+    enabled: boolean;
+    keywords: string[];
+    budgetMin: number;
+    budgetMax: number;
+    category: string;
+    workType: 'fixed' | 'hourly' | 'both';
+    clientRatingMin: number;
+    experienceLevel: 'beginner' | 'intermediate' | 'expert' | 'any';
+    excludeKeywords: string[];
+    excludeClients: string[];
+}
+
+// 検索条件設定型
+export interface SearchConditions {
+    version: string;
+    lastUpdated: Date;
+    conditions: SearchCondition[];
+}
+
+// ログイン認証情報型
+export interface LoginCredentials {
+    email: string;
+    password: string;
+}
+
+// Lambda イベント型
+export interface ScheduledExecutionEvent {
+    source: 'aws.events';
+    'detail-type': 'Scheduled Event';
+    detail: Record<string, unknown>;
+    time: string; // ISO形式
+}
+
+// Lambda レスポンス型
+export interface ScheduledExecutionResponse {
+    status: 'success' | 'error' | 'partial';
+    executionId: string;
+    timestamp: string;
+    results: {
+        jobsScraped: number;
+        newJobs: number;
+        aiEvaluated: number;
+        highScoreJobs: number;
+        duration: number;
+        costEstimate: number;
+    };
+    error?: {
+        type: string;
+        message: string;
+    };
+}
+
+// エラー型
+export enum ErrorType {
+    AUTHENTICATION_ERROR = 'AUTH_ERROR',
+    LAMBDA_TIMEOUT = 'LAMBDA_TIMEOUT',
+    S3_ACCESS_ERROR = 'S3_ACCESS_ERROR',
+    SCRAPING_ERROR = 'SCRAPING_ERROR',
+    AI_API_ERROR = 'AI_API_ERROR',
+    NETWORK_ERROR = 'NETWORK_ERROR',
+}
+
+export class AppError extends Error {
+    constructor(
+        public type: ErrorType,
+        message: string,
+        public retryable: boolean = false
+    ) {
+        super(message);
+        this.name = 'AppError';
+    }
+}
+</file>
+
+<file path="test/sample.test.ts">
+/**
+ * Sample test file to verify Jest configuration
+ */
+
+import { AppError, ErrorType, JobData } from '@/types';
+
+describe('Sample Tests', () => {
+    describe('Basic functionality', () => {
+        it('should pass basic test', () => {
+            expect(true).toBe(true);
+        });
+
+        it('should handle numbers correctly', () => {
+            const result = 2 + 2;
+            expect(result).toBe(4);
+        });
+
+        it('should work with async functions', async () => {
+            const promise = Promise.resolve('test');
+            await expect(promise).resolves.toBe('test');
+        });
+    });
+
+    describe('Type definitions', () => {
+        it('should create valid JobData object', () => {
+            const jobData: JobData = {
+                id: 'test-job-001',
+                title: 'テストジョブ',
+                description: 'これはテスト用の案件です',
+                url: 'https://crowdworks.jp/public/jobs/test-001',
+                budget: 100000,
+                deadline: new Date('2024-12-31'),
+                workType: 'fixed',
+                category: 'システム開発',
+                clientName: 'テストクライアント',
+                clientRating: 4.5,
+                clientReviews: 10,
+                skills: ['TypeScript', 'React', 'AWS'],
+                experience: 'intermediate',
+                scrapedAt: new Date(),
+                source: 'crowdworks',
+            };
+
+            expect(jobData).toBeValidJobData();
+            expect(jobData.budget).toBe(100000);
+            expect(jobData.skills).toHaveLength(3);
+            expect(jobData.workType).toBe('fixed');
+        });
+
+        it('should create valid AppError', () => {
+            const error = new AppError(
+                ErrorType.SCRAPING_ERROR,
+                'Test error message',
+                true
+            );
+
+            expect(error).toBeInstanceOf(Error);
+            expect(error).toBeInstanceOf(AppError);
+            expect(error.type).toBe(ErrorType.SCRAPING_ERROR);
+            expect(error.message).toBe('Test error message');
+            expect(error.retryable).toBe(true);
+            expect(error.name).toBe('AppError');
+        });
+    });
+
+    describe('Environment variables', () => {
+        it('should have test environment variables set', () => {
+            expect(process.env.NODE_ENV).toBe('test');
+            expect(process.env.AWS_REGION).toBe('ap-northeast-1');
+            expect(process.env.TZ).toBe('Asia/Tokyo');
+        });
+    });
+
+    describe('Date handling', () => {
+        it('should handle dates correctly', () => {
+            const now = new Date();
+            const tomorrow = new Date(Date.now() + 24 * 60 * 60 * 1000);
+
+            expect(now).toBeValidDate();
+            expect(tomorrow).toBeValidDate();
+            expect(tomorrow.getTime()).toBeGreaterThan(now.getTime());
+        });
+
+        it('should handle invalid dates', () => {
+            const invalidDate = new Date('invalid');
+            expect(invalidDate).not.toBeValidDate();
+        });
+    });
+
+    describe('Custom matchers', () => {
+        it('should use custom toBeValidDate matcher', () => {
+            const validDate = new Date();
+            const invalidDate = new Date('invalid');
+
+            expect(validDate).toBeValidDate();
+            expect(invalidDate).not.toBeValidDate();
+        });
+
+        it('should use custom toBeValidJobData matcher', () => {
+            const validJob = {
+                id: 'test-001',
+                title: 'Test Job',
+                budget: 50000,
+            };
+
+            const invalidJob = {
+                title: 'Missing ID',
+                budget: '50000', // wrong type
+            };
+
+            expect(validJob).toBeValidJobData();
+            expect(invalidJob).not.toBeValidJobData();
+        });
+    });
+});
+</file>
+
+<file path="test/setup.ts">
+import 'jest';
+
+// AWS SDKのモック設定
+jest.mock('@aws-sdk/client-s3');
+jest.mock('@aws-sdk/client-lambda');
+jest.mock('@aws-sdk/client-ssm');
+jest.mock('@aws-sdk/client-sns');
+
+// OpenAI SDKのモック設定
+jest.mock('openai');
+
+// Playwrightのモック設定
+jest.mock('playwright');
+
+// 環境変数の設定
+process.env.NODE_ENV = 'test';
+process.env.AWS_REGION = 'ap-northeast-1';
+process.env.LOG_LEVEL = 'error'; // テスト中はエラーログのみ
+
+// タイムゾーンの固定（テストの一貫性のため）
+process.env.TZ = 'Asia/Tokyo';
+
+// コンソールログの制御（必要に応じて）
+const originalConsoleLog = console.log;
+const originalConsoleWarn = console.warn;
+const originalConsoleError = console.error;
+
+beforeEach(() => {
+    // 各テスト前にモックをクリア
+    jest.clearAllMocks();
+
+    // 時間を固定（必要に応じて）
+    // jest.useFakeTimers();
+});
+
+afterEach(() => {
+    // テスト後のクリーンアップ
+    jest.clearAllTimers();
+    // jest.useRealTimers();
+});
+
+// 全テスト後のクリーンアップ
+afterAll(() => {
+    // コンソールログを復元
+    console.log = originalConsoleLog;
+    console.warn = originalConsoleWarn;
+    console.error = originalConsoleError;
+});
+
+// グローバルなテストヘルパー関数
+declare global {
+    namespace jest {
+        interface Matchers<R> {
+            toBeValidDate(): R;
+            toBeValidJobData(): R;
+        }
+    }
+}
+
+// カスタムマッチャーの追加
+expect.extend({
+    toBeValidDate(received: unknown) {
+        const pass = received instanceof Date && !isNaN(received.getTime());
+        return {
+            message: () => `expected ${received} to be a valid Date object`,
+            pass,
+        };
+    },
+
+    toBeValidJobData(received: unknown) {
+        const pass =
+            typeof received === 'object' &&
+            received !== null &&
+            'id' in received &&
+            'title' in received &&
+            'budget' in received &&
+            typeof (received as { id: unknown }).id === 'string' &&
+            typeof (received as { title: unknown }).title === 'string' &&
+            typeof (received as { budget: unknown }).budget === 'number';
+
+        return {
+            message: () => `expected ${JSON.stringify(received)} to be valid job data`,
+            pass,
+        };
+    },
+});
+</file>
+
+<file path="tsconfig.json">
+{
+    "compilerOptions": {
+        "target": "ES2022",
+        "module": "commonjs",
+        "lib": [
+            "ES2022"
+        ],
+        "outDir": "./dist",
+        "rootDir": "./src",
+        "removeComments": true,
+        "declaration": true,
+        "declarationMap": true,
+        "sourceMap": true,
+        "strict": true,
+        "noImplicitAny": true,
+        "strictNullChecks": true,
+        "strictFunctionTypes": true,
+        "strictBindCallApply": true,
+        "strictPropertyInitialization": true,
+        "noImplicitReturns": true,
+        "noFallthroughCasesInSwitch": true,
+        "noUncheckedIndexedAccess": true,
+        "noImplicitOverride": true,
+        "exactOptionalPropertyTypes": true,
+        "noPropertyAccessFromIndexSignature": true,
+        "noUnusedLocals": true,
+        "noUnusedParameters": true,
+        "allowUnreachableCode": false,
+        "allowUnusedLabels": false,
+        "esModuleInterop": true,
+        "allowSyntheticDefaultImports": true,
+        "forceConsistentCasingInFileNames": true,
+        "moduleResolution": "node",
+        "resolveJsonModule": true,
+        "isolatedModules": true,
+        "skipLibCheck": true,
+        "experimentalDecorators": true,
+        "emitDecoratorMetadata": true,
+        "baseUrl": "./",
+        "paths": {
+            "@/*": [
+                "src/*"
+            ],
+            "@/types/*": [
+                "src/types/*"
+            ],
+            "@/services/*": [
+                "src/services/*"
+            ],
+            "@/utils/*": [
+                "src/utils/*"
+            ],
+            "@/infrastructure/*": [
+                "src/infrastructure/*"
+            ]
+        }
+    },
+    "include": [
+        "src/**/*",
+        "test/**/*"
+    ],
+    "exclude": [
+        "node_modules",
+        "dist",
+        "cdk.out",
+        "*.js"
+    ],
+    "ts-node": {
+        "require": [
+            "tsconfig-paths/register"
+        ],
+        "compilerOptions": {
+            "module": "commonjs"
+        }
+    }
+}
 </file>
 
 <file path="docs/03_data_design.md">
@@ -1586,10 +3213,966 @@ const isRetryableError = (errorCode: APIErrorCode): boolean => {
 ```
 </file>
 
+<file path="docs/01_requirements.md">
+# 要件定義書
+
+## 1. プロジェクト概要
+
+### 1.1 プロジェクト名
+クラウドワークス案件自動検索・評価システム（CrowdWorks Auto Job Searcher）
+
+### 1.2 目的・背景
+クラウドワークス上で適切な案件を効率的に発見し、案件の品質やマッチング度を自動評価することで、フリーランサーの案件選定業務を自動化・効率化する。
+
+**背景**
+- 手動での案件チェックは時間がかかる
+- 良い案件を見逃すリスクがある
+- 案件の評価に主観が入りやすい
+- 定期的なチェックが困難
+- 個人利用でのコスト効率性を重視
+
+### 1.3 スコープ
+**対象範囲**
+- クラウドワークス上の案件情報の自動取得
+- AI（ChatGPT）による案件評価
+- 検索条件の管理・保存
+- 定期実行による継続監視
+- AWSサーバレス環境での運用
+- 直近1週間のデータ管理（案件のcloseが早いため）
+
+**対象外**
+- 他のクラウドソーシングサイト
+- 案件への自動応募機能
+- クライアントとのやり取り自動化
+- オンプレミス環境での運用
+- 長期間のデータ分析・トレンド分析
+
+## 2. 機能要件
+
+### 2.1 Must（必須機能）
+- **検索条件管理機能**
+  - 検索条件の保存・読み込み（S3 JSON形式）
+  - 複数の検索条件セットの管理
+- **自動取得機能**
+  - 15分間隔での自動実行（EventBridge）
+  - AWSサーバレス環境での安定動作
+  - ブラウザ自動操作によるデータ取得（Playwright on Lambda）
+- **AI評価機能（軽量版）**
+  - ChatGPT APIを使用した案件評価（事前フィルタ後）
+  - おすすめ度のスコアリング（1-10点）
+  - 評価理由の文章生成
+- **データ保存機能**
+  - 取得した案件データの永続化（S3 JSON形式）
+  - 評価結果の履歴保存（1週間）
+  - 重複案件の検出・除外（過去24-48時間分）
+
+### 2.2 Should（重要機能）
+- **通知機能**
+  - 高評価案件の即座通知（SNS/SES）
+  - 実行エラー時の通知
+- **フィルタリング機能**
+  - 予算範囲での絞り込み
+  - スキルセットマッチング
+  - 納期条件でのフィルタ
+- **ログ・監視機能**
+  - 実行ログの記録（S3 JSON形式）
+  - エラー発生時の通知
+  - 日次サマリー生成
+
+### 2.3 Could（あれば良い機能）
+- **簡易レポート機能**
+  - 週次の案件動向サマリー
+  - 高評価案件の傾向分析
+- **Webダッシュボード**
+  - S3データを読み込む静的サイト（Vercel等）
+  - 設定変更用の簡易UI
+
+## 3. 非機能要件
+
+### 3.1 パフォーマンス要件
+- 15分間隔での実行を確実に実行
+- Lambda関数のタイムアウト: 最大10分
+- 1回の実行で最大50件の案件を処理
+- 実行時間1分以内を目標（コスト削減のため）
+- AI評価は高ポテンシャル案件のみ（コスト削減）
+
+### 3.2 可用性要件
+- AWSサーバレス環境での24時間365日稼働
+- システム障害時の自動復旧機能
+- ネットワーク障害時のリトライ機能（最大3回）
+- 稼働率: 95%以上（個人利用レベル）
+
+### 3.3 セキュリティ要件
+- AWS Systems Manager Parameter Store でのシークレット管理
+- IAMロールによる最小権限アクセス制御
+- S3バケットのプライベート設定
+- 取得データの保護（S3暗号化）
+- ログの機密情報マスキング
+
+### 3.4 運用・保守性要件
+- S3での構造化ログ管理
+- AWS CDK での Infrastructure as Code
+- Lambda関数のバージョン管理
+- エラー時のSNS通知
+- 7日間の自動データ削除（S3 Lifecycle Policy）
+
+### 3.5 コスト要件
+- **月額運用コスト: $5以下を厳守**
+- Lambda実行時間の最適化（1分以内）
+- S3使用量の最小化
+- CloudWatch使用の完全廃止
+- ChatGPT API使用量の制限（事前フィルタリング）
+
+## 4. 制約事項
+
+### 4.1 技術的制約
+- AWS サーバレス環境での開発・運用
+- TypeScript での型安全性確保（any型の使用禁止）
+- Lambda関数の実行時間制限（最大10分）
+- Playwrightブラウザのメモリ制限
+- S3での構造化データ管理（NoSQL機能なし）
+- クラウドワークスの利用規約遵守
+
+### 4.2 運用制約
+- ChatGPT API の利用料金制限（月$3以下）
+- AWS サービス利用料金制限（月$2以下）
+- クラウドワークスへのアクセス頻度制限
+- 1日あたりの最大実行回数: 96回（15分×4×24時間）
+- Lambda同時実行数制限
+- データ保持期間: 最大7日間
+
+### 4.3 その他制約
+- 個人利用目的に限定
+- 商用利用は別途検討が必要
+- スクレイピング対象サイトの仕様変更リスク
+- AWSアカウントの利用可能リージョン制限
+- リアルタイム分析機能なし
+
+## 5. 前提条件
+- AWSアカウントが作成済み
+- 適切なIAM権限が設定済み
+- ChatGPT API キーが取得済み
+- クラウドワークスアカウントが作成済み
+- インターネット接続が安定している
+- AWS CLI/CDK の実行環境
+- 案件は1週間程度でcloseするため短期データ管理で十分
+
+## 6. 用語定義
+| 用語 | 定義 |
+|------|------|
+| 案件 | クラウドワークス上で公開されている仕事の依頼 |
+| 検索条件 | 案件を絞り込むためのフィルター設定 |
+| 評価スコア | AI が算出する案件のおすすめ度（1-10点） |
+| 実行履歴 | システムが自動実行した記録 |
+| スクレイピング | ブラウザ自動操作によるデータ取得 |
+| サーバレス | AWS Lambda等のサーバー管理不要なコンピューティングサービス |
+| EventBridge | AWSのイベント駆動型サービス（旧CloudWatch Events） |
+| 事前フィルタ | AI評価前の予算・キーワード等による絞り込み |
+| TTL | Time To Live、S3での自動削除設定 |
+</file>
+
+<file path="docs/02_system_design.md">
+# システム設計書
+
+## 1. システム概要
+
+### 1.1 システム構成図
+
+```
+                        ┌─────────────────────────────────────┐
+                        │             AWS Cloud                │
+                        │                                     │
+    ┌──────────────────────────────────────────────────────────────┐
+    │                    EventBridge (15分間隔)                      │
+    └──────────────────────┬───────────────────────────────────────┘
+                           │
+                           ▼
+    ┌──────────────────────────────────────────────────────────────┐
+    │                 Lambda Function (Main)                       │
+    │  ┌─────────────┐  ┌──────────────┐  ┌──────────────────┐    │
+    │  │ Scheduler   │  │   Scraper    │  │   AI Evaluator   │    │
+    │  │   Logic     │─▶│ (Playwright) │─▶│  (ChatGPT API)   │    │
+    │  └─────────────┘  └──────────────┘  └──────────────────┘    │
+    └──────────────────────┬───────────────────────┬───────────────┘
+                           │                       │
+                           ▼                       │
+    ┌──────────────────────────────────────────────┼───────────────┐
+    │                     S3 Bucket                │               │
+    │  ┌─────────────────┐  ┌─────────────────┐   │               │
+    │  │ jobs/           │  │   logs/         │   │               │
+    │  │ (案件データ)      │  │ (実行ログ)       │   │               │
+    │  └─────────────────┘  └─────────────────┘   │               │
+    │  ┌─────────────────┐  ┌─────────────────┐   │               │
+    │  │ evaluations/    │  │  config/        │   │               │
+    │  │ (評価結果)        │  │ (設定ファイル)    │   │               │
+    │  └─────────────────┘  └─────────────────┘   │               │
+    └──────────────────────────────────────────────┘               │
+                           │                                       │
+                           ▼                                       │
+    ┌──────────────────────────────────────────────────────────────┘
+    │                 支援サービス（最小構成）
+    │  ┌─────────────────┐  ┌─────────────────┐
+    │  │ Parameter Store │  │      SNS        │
+    │  │  (Secrets)      │  │ (Error Notify)  │
+    │  └─────────────────┘  └─────────────────┘
+    └──────────────────────────────────────────────────────────────┘
+                           │
+                           ▼
+                    ┌──────────────────┐
+                    │ External Services│
+                    │ - CrowdWorks     │
+                    │ - ChatGPT API    │
+                    └──────────────────┘
+```
+
+### 1.2 アーキテクチャ方針
+
+- **コストファースト**: 月$5以下の厳格なコスト制約を最優先
+- **S3中心設計**: データストレージ・ログ・設定をすべてS3で管理
+- **シンプル・軽量**: 複雑な機能を排除し、コア機能に集中
+- **事前フィルタリング**: AI評価前の絞り込みでコスト削減
+- **短期データ管理**: 7日間のTTLで自動削除
+- **型安全性**: TypeScript strict モードで完全な型定義
+
+### 1.3 技術スタック
+
+**コンピューティング**
+- **AWS Lambda** (Node.js 18.x): メイン実行環境
+- **EventBridge**: スケジューリング（15分間隔）
+- **AWS CDK** (TypeScript): Infrastructure as Code
+
+**データ・ストレージ**
+- **S3**: 全データの一元管理（案件・ログ・設定・評価結果）
+- **S3 Lifecycle Policy**: 7日後自動削除
+- **Parameter Store**: シークレット管理のみ
+
+**言語・ライブラリ**
+- **TypeScript** (v5以上): 型安全性確保、any型使用禁止
+- **Playwright**: ブラウザ自動化（Lambda Layer）
+- **AWS SDK v3**: AWS サービス連携
+- **OpenAI SDK**: ChatGPT連携（軽量利用）
+
+**監視・運用（最小構成）**
+- **SNS**: エラー通知のみ
+- **S3ベースログ**: 構造化JSON形式
+
+## 2. コンポーネント設計
+
+### 2.1 スケジューラー
+
+**責務**
+- EventBridge からのトリガー受信
+- Lambda関数の実行制御
+- 実行時間の最適化（1分以内目標）
+
+**実装方式**
+```typescript
+// EventBridge Rule
+const scheduleRule = new events.Rule(this, 'ScheduleRule', {
+  schedule: events.Schedule.rate(Duration.minutes(15)),
+  targets: [new targets.LambdaFunction(mainFunction)]
+});
+
+interface SchedulerEvent {
+  source: 'aws.events';
+  'detail-type': 'Scheduled Event';
+  detail: {};
+}
+```
+
+### 2.2 スクレイパー
+
+**責務**
+- クラウドワークスへの軽量アクセス
+- 効率的なデータ抽出（最大50件/回）
+- 事前フィルタリング実行
+
+**軽量化設計**
+```typescript
+interface IScrapperService {
+  authenticateUser(credentials: LoginCredentials): Promise<void>;
+  searchJobsLight(condition: SearchCondition): Promise<JobData[]>;
+  applyPreFilter(jobs: JobData[]): JobData[]; // AI評価前フィルタ
+  validateJobData(job: JobData): boolean;
+}
+
+// 事前フィルタリング例
+const applyPreFilter = (jobs: JobData[]): JobData[] => {
+  return jobs.filter(job => 
+    job.budget >= 50000 &&           // 最低予算
+    job.clientRating >= 4.0 &&       // クライアント評価
+    hasTargetSkills(job.skills) &&   // スキルマッチング
+    isReasonableDeadline(job.deadline) // 納期チェック
+  );
+};
+```
+
+### 2.3 データストレージ（S3ベース）
+
+**責務**
+- S3での構造化データ管理
+- JSON形式でのシンプルな読み書き
+- TTL機能による自動削除
+
+**ファイル構造設計**
+```typescript
+// S3 Bucket構造
+interface S3Structure {
+  'jobs/': {
+    pattern: 'YYYY-MM-DDTHH-mm.json';
+    example: '2024-01-15T14-30.json';
+    ttl: '7 days';
+  };
+  'evaluations/': {
+    pattern: 'YYYY-MM-DDTHH-mm.json';
+    example: '2024-01-15T14-30.json';
+    ttl: '7 days';
+  };
+  'logs/': {
+    execution: 'YYYY-MM-DDTHH-mm-execution.json';
+    error: 'YYYY-MM-DDTHH-mm-error.json';
+    daily: 'daily-summary/YYYY-MM-DD.json';
+    ttl: '7 days';
+  };
+  'config/': {
+    searchConditions: 'search-conditions.json';
+    system: 'system-config.json';
+    ttl: 'none';
+  };
+}
+
+// データ操作サービス
+class S3DataService {
+  async saveJobs(jobs: JobData[]): Promise<void> {
+    const timestamp = new Date().toISOString().slice(0, 16);
+    await this.s3.putObject({
+      Bucket: this.bucketName,
+      Key: `jobs/${timestamp}.json`,
+      Body: JSON.stringify(jobs, null, 2),
+      ServerSideEncryption: 'AES256'
+    }).promise();
+  }
+
+  async getRecentJobs(hours: number = 24): Promise<JobData[]> {
+    const cutoff = new Date(Date.now() - hours * 60 * 60 * 1000);
+    const objects = await this.listObjectsSince('jobs/', cutoff);
+    
+    const allJobs: JobData[] = [];
+    for (const obj of objects) {
+      const data = await this.getObject(obj.Key);
+      allJobs.push(...JSON.parse(data));
+    }
+    return allJobs;
+  }
+
+  async getExistingJobIds(hours: number = 48): Promise<Set<string>> {
+    const recentJobs = await this.getRecentJobs(hours);
+    return new Set(recentJobs.map(job => job.id));
+  }
+}
+```
+
+### 2.4 AI評価エンジン（軽量版）
+
+**責務**
+- 事前フィルタ済み案件のみ評価
+- バッチ処理での効率化
+- コスト監視機能
+
+**軽量実装**
+```typescript
+class LightAIEvaluatorService {
+  private monthlyUsage: number = 0;
+  private readonly MONTHLY_LIMIT = 3; // $3/月制限
+
+  async evaluateFilteredJobs(jobs: JobData[]): Promise<JobEvaluation[]> {
+    // コスト制限チェック
+    if (this.monthlyUsage >= this.MONTHLY_LIMIT) {
+      throw new Error('Monthly AI budget exceeded');
+    }
+
+    // 最重要案件のみ評価（さらなる絞り込み）
+    const priorityJobs = this.selectPriorityJobs(jobs);
+    
+    const evaluations: JobEvaluation[] = [];
+    for (const job of priorityJobs) {
+      try {
+        const evaluation = await this.evaluateJob(job);
+        evaluations.push(evaluation);
+        
+        // 使用量追跡
+        this.monthlyUsage += this.estimateTokenCost(job);
+        
+      } catch (error) {
+        // AI評価失敗時はデフォルトスコア
+        evaluations.push(this.createDefaultEvaluation(job));
+      }
+    }
+    
+    return evaluations;
+  }
+
+  private selectPriorityJobs(jobs: JobData[]): JobData[] {
+    return jobs
+      .sort((a, b) => b.budget - a.budget) // 高予算順
+      .slice(0, 10); // 上位10件のみ
+  }
+
+  private estimateTokenCost(job: JobData): number {
+    const tokenCount = (job.title.length + job.description.length) / 4;
+    return tokenCount * 0.002 / 1000; // GPT-3.5-turbo価格
+  }
+}
+```
+
+### 2.5 設定管理（S3ベース）
+
+**責務**
+- S3での設定ファイル管理
+- Parameter Store でのシークレット管理
+- 軽量な設定読み込み
+
+**設定構造**
+```typescript
+// config/system-config.json
+interface SystemConfig {
+  scraping: {
+    maxJobsPerExecution: 50;
+    preFilterEnabled: true;
+    minBudget: 50000;
+    minClientRating: 4.0;
+  };
+  ai: {
+    enabled: true;
+    model: 'gpt-3.5-turbo';
+    maxJobsForEvaluation: 10;
+    monthlyBudgetLimit: 3.0;
+  };
+  notification: {
+    enabled: true;
+    scoreThreshold: 7;
+    errorNotificationEnabled: true;
+  };
+  storage: {
+    retentionDays: 7;
+    compressionEnabled: false;
+  };
+}
+
+// config/search-conditions.json
+interface SearchConditions {
+  conditions: Array<{
+    id: string;
+    name: string;
+    keywords: string[];
+    budgetMin: number;
+    budgetMax: number;
+    category: string;
+    workType: 'fixed' | 'hourly';
+    enabled: boolean;
+  }>;
+}
+```
+
+## 3. データフロー
+
+### 3.1 データフロー図
+
+```
+EventBridge ──15分──▶ Lambda Function (Main Handler)
+                            │
+                            ▼
+                    Parameter Store ──シークレット取得──▶ Scraper Service
+                            │                              │
+                            ▼                              ▼
+                    S3 Config ◀──設定読み込み──────── CrowdWorks Site
+                    (search-conditions.json)           │
+                            │                          ▼
+                            ▼                     案件データ取得
+                    S3 Jobs ◀──重複チェック────── Pre-Filter
+                    (過去48時間分)                    │
+                            │                          ▼
+                            ▼                     新規案件
+                    S3 Jobs ◀────新規案件保存──── Light AI Evaluator
+                    (timestamp.json)                  │
+                            │                          ▼
+                            ▼                     評価結果
+                    S3 Evaluations ◀──評価保存─── High Score Filter
+                    (timestamp.json)                  │
+                            │                          ▼
+                            ▼                     通知判定
+                    S3 Logs ◀────実行ログ────── SNS Notification
+                    (execution.json)              (エラー・高評価)
+```
+
+### 3.2 処理フロー
+
+**最適化されたメイン処理フロー**
+```typescript
+export const handler = async (event: SchedulerEvent): Promise<void> => {
+  const executionId = Date.now().toString();
+  const startTime = Date.now();
+  const timestamp = new Date().toISOString().slice(0, 16);
+  
+  const log: ExecutionLog = {
+    executionId,
+    timestamp,
+    status: 'success',
+    duration: 0,
+    jobsScraped: 0,
+    newJobs: 0,
+    aiEvaluated: 0,
+    highScoreJobs: 0,
+    costEstimate: 0
+  };
+
+  try {
+    // 1. 設定とシークレット取得（並列）
+    const [config, credentials] = await Promise.all([
+      s3DataService.getSystemConfig(),
+      parameterService.getCredentials()
+    ]);
+
+    // 2. 重複チェック用データ取得
+    const existingJobIds = await s3DataService.getExistingJobIds(48);
+
+    // 3. スクレイピング実行
+    const scraper = new ScraperService(credentials);
+    const allJobs = await scraper.searchJobsLight(config.searchConditions);
+    log.jobsScraped = allJobs.length;
+
+    // 4. 重複排除
+    const newJobs = allJobs.filter(job => !existingJobIds.has(job.id));
+    log.newJobs = newJobs.length;
+
+    if (newJobs.length === 0) {
+      log.duration = Date.now() - startTime;
+      await s3DataService.saveExecutionLog(log, timestamp);
+      return; // 新規案件なしで終了
+    }
+
+    // 5. 新規案件保存
+    await s3DataService.saveJobs(newJobs, timestamp);
+
+    // 6. 事前フィルタ実行
+    const filteredJobs = scraper.applyPreFilter(newJobs);
+
+    // 7. AI評価（フィルタ後の優先案件のみ）
+    let evaluations: JobEvaluation[] = [];
+    if (config.ai.enabled && filteredJobs.length > 0) {
+      const aiEvaluator = new LightAIEvaluatorService();
+      evaluations = await aiEvaluator.evaluateFilteredJobs(filteredJobs);
+      log.aiEvaluated = evaluations.length;
+      log.costEstimate = aiEvaluator.getSessionCost();
+
+      // 8. 評価結果保存
+      await s3DataService.saveEvaluations(evaluations, timestamp);
+    }
+
+    // 9. 高評価案件通知
+    const highScoreJobs = evaluations.filter(e => e.score >= config.notification.scoreThreshold);
+    log.highScoreJobs = highScoreJobs.length;
+
+    if (highScoreJobs.length > 0) {
+      await notificationService.sendHighScoreAlert(highScoreJobs);
+    }
+
+    // 10. 実行ログ保存
+    log.duration = Date.now() - startTime;
+    await s3DataService.saveExecutionLog(log, timestamp);
+
+  } catch (error) {
+    log.status = 'error';
+    log.error = {
+      type: error.constructor.name,
+      message: error.message,
+      stack: error.stack
+    };
+    log.duration = Date.now() - startTime;
+
+    // エラーログ保存
+    await s3DataService.saveErrorLog(log, timestamp);
+
+    // 重要エラーの通知
+    if (shouldNotifyError(error)) {
+      await notificationService.sendErrorAlert(error, executionId);
+    }
+
+    throw error; // Lambda失敗として記録
+  }
+};
+```
+
+## 4. インターフェース設計
+
+### 4.1 外部API連携
+
+**ChatGPT API（軽量版）**
+```typescript
+interface LightChatGPTRequest {
+  model: 'gpt-3.5-turbo'; // GPT-4は使用しない（コスト削減）
+  messages: ChatCompletionMessage[];
+  max_tokens: 200; // 短縮
+  temperature: 0.3; // 一貫性重視
+  response_format: { type: 'json_object' };
+}
+
+const LIGHT_EVALUATION_PROMPT = `
+案件を簡潔に評価してください（予算:{budget}円、クライアント評価:{clientRating}）：
+
+{title}
+
+スキル: {skills}
+詳細: {description}
+
+JSON形式で回答:
+{"score": 1-10, "reason": "50文字以内"}
+`;
+```
+
+### 4.2 内部データ構造
+
+**軽量化データ型**
+```typescript
+interface JobData {
+  id: string;
+  title: string;
+  description: string; // 500文字まで
+  budget: number;
+  deadline: Date;
+  clientRating: number;
+  skills: string[]; // 最大5個
+  url: string;
+  scrapedAt: Date;
+}
+
+interface JobEvaluation {
+  jobId: string;
+  score: number; // 1-10
+  reason: string; // 50文字以内
+  evaluatedAt: Date;
+  tokenUsed: number; // コスト追跡
+}
+
+interface ExecutionLog {
+  executionId: string;
+  timestamp: string;
+  status: 'success' | 'error' | 'partial';
+  duration: number;
+  jobsScraped: number;
+  newJobs: number;
+  aiEvaluated: number;
+  highScoreJobs: number;
+  costEstimate: number;
+  error?: {
+    type: string;
+    message: string;
+    stack?: string;
+  };
+}
+```
+
+## 5. セキュリティ設計
+
+### 5.1 認証・認可（最小権限）
+
+**IAM ロール設計**
+```typescript
+const lambdaRole = new iam.Role(this, 'LambdaExecutionRole', {
+  assumedBy: new iam.ServicePrincipal('lambda.amazonaws.com'),
+  managedPolicies: [
+    iam.ManagedPolicy.fromAwsManagedPolicyName('service-role/AWSLambdaBasicExecutionRole')
+  ],
+  inlinePolicies: {
+    S3Access: new iam.PolicyDocument({
+      statements: [
+        new iam.PolicyStatement({
+          effect: iam.Effect.ALLOW,
+          actions: [
+            's3:GetObject',
+            's3:PutObject',
+            's3:ListBucket'
+          ],
+          resources: [
+            s3Bucket.bucketArn,
+            `${s3Bucket.bucketArn}/*`
+          ]
+        })
+      ]
+    }),
+    ParameterStoreAccess: new iam.PolicyDocument({
+      statements: [
+        new iam.PolicyStatement({
+          effect: iam.Effect.ALLOW,
+          actions: ['ssm:GetParameter'],
+          resources: [`arn:aws:ssm:${region}:${account}:parameter/crowdworks-searcher/secrets`]
+        })
+      ]
+    }),
+    SNSAccess: new iam.PolicyDocument({
+      statements: [
+        new iam.PolicyStatement({
+          effect: iam.Effect.ALLOW,
+          actions: ['sns:Publish'],
+          resources: [errorTopic.topicArn]
+        })
+      ]
+    })
+  }
+});
+```
+
+### 5.2 データ保護
+
+**S3セキュリティ設定**
+```typescript
+const s3Bucket = new s3.Bucket(this, 'CrowdWorksSearcherBucket', {
+  encryption: s3.BucketEncryption.S3_MANAGED,
+  blockPublicAccess: s3.BlockPublicAccess.BLOCK_ALL,
+  lifecycleRules: [
+    {
+      id: 'DeleteOldData',
+      enabled: true,
+      expiration: Duration.days(7), // 7日後自動削除
+      abortIncompleteMultipartUploadAfter: Duration.days(1)
+    }
+  ],
+  versioning: false, // コスト削減
+  removalPolicy: RemovalPolicy.DESTROY
+});
+```
+
+## 6. エラーハンドリング設計
+
+### 6.1 エラー分類（簡素化）
+
+```typescript
+export enum ErrorType {
+  // 重要エラー（通知必要）
+  AUTHENTICATION_ERROR = 'AUTH_ERROR',
+  LAMBDA_TIMEOUT = 'LAMBDA_TIMEOUT',
+  S3_ACCESS_ERROR = 'S3_ACCESS_ERROR',
+  
+  // 軽微エラー（ログのみ）
+  SCRAPING_ERROR = 'SCRAPING_ERROR',
+  AI_API_ERROR = 'AI_API_ERROR',
+  NETWORK_ERROR = 'NETWORK_ERROR'
+}
+
+export class LightAppError extends Error {
+  constructor(
+    public type: ErrorType,
+    message: string,
+    public retryable: boolean = false
+  ) {
+    super(message);
+  }
+}
+```
+
+### 6.2 エラー処理方針
+
+**軽量エラーハンドリング**
+```typescript
+class LightRetryHandler {
+  async executeWithRetry<T>(
+    operation: () => Promise<T>,
+    maxRetries: number = 2 // 削減
+  ): Promise<T> {
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
+      try {
+        return await operation();
+      } catch (error) {
+        if (attempt === maxRetries) throw error;
+        await this.sleep(1000 * attempt); // シンプルなバックオフ
+      }
+    }
+    throw new Error('Max retries exceeded');
+  }
+}
+
+const shouldNotifyError = (error: Error): boolean => {
+  const criticalErrors = [
+    'AUTHENTICATION_ERROR',
+    'LAMBDA_TIMEOUT', 
+    'S3_ACCESS_ERROR'
+  ];
+  return criticalErrors.includes(error.constructor.name);
+};
+```
+
+## 7. ログ設計（S3ベース）
+
+### 7.1 S3ログ構造
+
+```typescript
+interface S3LogStructure {
+  'logs/execution/': {
+    pattern: 'YYYY-MM-DDTHH-mm-execution.json';
+    content: ExecutionLog;
+    retention: '7 days';
+  };
+  'logs/error/': {
+    pattern: 'YYYY-MM-DDTHH-mm-error.json';
+    content: ExecutionLog; // status = 'error'
+    retention: '7 days';
+  };
+  'logs/daily-summary/': {
+    pattern: 'YYYY-MM-DD.json';
+    content: DailySummary;
+    retention: '7 days';
+  };
+}
+
+interface DailySummary {
+  date: string;
+  totalExecutions: number;
+  successfulExecutions: number;
+  totalJobsFound: number;
+  totalNewJobs: number;
+  averageScore: number;
+  highScoreJobs: number;
+  totalAICost: number;
+  errors: string[];
+}
+```
+
+### 7.2 ログ実装
+
+**軽量ログサービス**
+```typescript
+class S3LogService {
+  async saveExecutionLog(log: ExecutionLog, timestamp: string): Promise<void> {
+    await this.s3.putObject({
+      Bucket: this.bucketName,
+      Key: `logs/execution/${timestamp}-execution.json`,
+      Body: JSON.stringify(log, null, 2),
+      ContentType: 'application/json'
+    }).promise();
+  }
+
+  async saveErrorLog(log: ExecutionLog, timestamp: string): Promise<void> {
+    await this.s3.putObject({
+      Bucket: this.bucketName,
+      Key: `logs/error/${timestamp}-error.json`,
+      Body: JSON.stringify(log, null, 2),
+      ContentType: 'application/json'
+    }).promise();
+  }
+
+  async generateDailySummary(date: string): Promise<DailySummary> {
+    const dayLogs = await this.getLogsForDate(date);
+    
+    return {
+      date,
+      totalExecutions: dayLogs.length,
+      successfulExecutions: dayLogs.filter(l => l.status === 'success').length,
+      totalJobsFound: dayLogs.reduce((sum, l) => sum + l.jobsScraped, 0),
+      totalNewJobs: dayLogs.reduce((sum, l) => sum + l.newJobs, 0),
+      averageScore: this.calculateAverageScore(dayLogs),
+      highScoreJobs: dayLogs.reduce((sum, l) => sum + l.highScoreJobs, 0),
+      totalAICost: dayLogs.reduce((sum, l) => sum + l.costEstimate, 0),
+      errors: dayLogs.filter(l => l.error).map(l => l.error!.message)
+    };
+  }
+}
+```
+
+## 8. コスト最適化戦略
+
+### 8.1 コスト監視
+
+```typescript
+interface CostMonitor {
+  trackLambdaExecution(duration: number, memoryMB: number): void;
+  trackS3Operations(operations: S3Operation[]): void;
+  trackAIUsage(tokens: number, model: string): void;
+  generateMonthlyCostReport(): MonthlyCostReport;
+}
+
+interface MonthlyCostReport {
+  lambda: { executions: number; cost: number };
+  s3: { operations: number; storage: number; cost: number };
+  ai: { tokens: number; cost: number };
+  other: { sns: number; parameterStore: number };
+  total: number;
+  budgetRemaining: number;
+}
+```
+
+### 8.2 自動コスト制御
+
+```typescript
+class CostController {
+  private monthlyBudget = 5.0; // $5制限
+
+  async checkBudgetBeforeExecution(): Promise<boolean> {
+    const currentCost = await this.getCurrentMonthlyCost();
+    return currentCost < this.monthlyBudget * 0.9; // 90%で制限
+  }
+
+  async suspendExpensiveFeatures(): Promise<void> {
+    // AI評価を一時停止
+    await this.updateConfig({ ai: { enabled: false } });
+    
+    // 通知送信
+    await this.notifyBudgetExceeded();
+  }
+}
+```
+
+**これで月$5以下での運用が可能な設計になりました！**
+</file>
+
 <file path="docs/05_implementation_plan.md">
 # 実装計画書
 
 ## 1. 開発フェーズ
+
+### Phase 0: CI/CD環境構築（1週間）
+
+**目標**: 安定した開発・テスト・デプロイ環境の構築
+
+**成果物**
+- GitHub Actions ワークフロー設定
+- TypeScript プロジェクト初期化
+- テスト環境設定（Jest + 型定義）
+- Linting・コードフォーマット設定
+- AWS CDK プロジェクト構造
+- 環境別設定管理
+
+**主要タスク**
+```typescript
+interface Phase0Tasks {
+  projectSetup: {
+    packageJson: 'TypeScript strict mode, ESLint, Prettier';
+    tsconfigJson: '厳密な型チェック設定';
+    jestConfig: '単体テスト環境';
+    eslintConfig: 'any型禁止ルール';
+  };
+  
+  cicdPipeline: {
+    workflow: '.github/workflows/ci.yml';
+    testStage: 'lint, type-check, unit-test';
+    buildStage: 'TypeScript compile, CDK synth';
+    deployStages: 'staging, production (manual approval)';
+  };
+  
+  awsInfrastructure: {
+    cdkInit: 'TypeScript CDK プロジェクト';
+    stackStructure: '環境別スタック分離';
+    secretsManagement: 'GitHub Secrets 設計';
+  };
+}
+```
+
+**完了基準**
+- [ ] TypeScript strict mode でコンパイル成功
+- [ ] ESLint で any 型使用をエラー検出
+- [ ] Jest テストが実行可能
+- [ ] GitHub Actions でCI/CDパイプライン動作
+- [ ] CDK synth が成功
+- [ ] 環境別デプロイが可能
 
 ### Phase 1: AWS基盤構築・環境セットアップ（1-2週間）
 
@@ -2586,928 +5169,345 @@ interface MVPCriteria {
 この実装計画書により、S3ベース設計とコスト制約$5/月を満たしながら、段階的かつ確実にシステムを構築できる具体的な道筋が示されました。
 </file>
 
-<file path="docs/01_requirements.md">
-# 要件定義書
-
-## 1. プロジェクト概要
-
-### 1.1 プロジェクト名
-クラウドワークス案件自動検索・評価システム（CrowdWorks Auto Job Searcher）
-
-### 1.2 目的・背景
-クラウドワークス上で適切な案件を効率的に発見し、案件の品質やマッチング度を自動評価することで、フリーランサーの案件選定業務を自動化・効率化する。
-
-**背景**
-- 手動での案件チェックは時間がかかる
-- 良い案件を見逃すリスクがある
-- 案件の評価に主観が入りやすい
-- 定期的なチェックが困難
-- 個人利用でのコスト効率性を重視
-
-### 1.3 スコープ
-**対象範囲**
-- クラウドワークス上の案件情報の自動取得
-- AI（ChatGPT）による案件評価
-- 検索条件の管理・保存
-- 定期実行による継続監視
-- AWSサーバレス環境での運用
-- 直近1週間のデータ管理（案件のcloseが早いため）
-
-**対象外**
-- 他のクラウドソーシングサイト
-- 案件への自動応募機能
-- クライアントとのやり取り自動化
-- オンプレミス環境での運用
-- 長期間のデータ分析・トレンド分析
-
-## 2. 機能要件
-
-### 2.1 Must（必須機能）
-- **検索条件管理機能**
-  - 検索条件の保存・読み込み（S3 JSON形式）
-  - 複数の検索条件セットの管理
-- **自動取得機能**
-  - 15分間隔での自動実行（EventBridge）
-  - AWSサーバレス環境での安定動作
-  - ブラウザ自動操作によるデータ取得（Playwright on Lambda）
-- **AI評価機能（軽量版）**
-  - ChatGPT APIを使用した案件評価（事前フィルタ後）
-  - おすすめ度のスコアリング（1-10点）
-  - 評価理由の文章生成
-- **データ保存機能**
-  - 取得した案件データの永続化（S3 JSON形式）
-  - 評価結果の履歴保存（1週間）
-  - 重複案件の検出・除外（過去24-48時間分）
-
-### 2.2 Should（重要機能）
-- **通知機能**
-  - 高評価案件の即座通知（SNS/SES）
-  - 実行エラー時の通知
-- **フィルタリング機能**
-  - 予算範囲での絞り込み
-  - スキルセットマッチング
-  - 納期条件でのフィルタ
-- **ログ・監視機能**
-  - 実行ログの記録（S3 JSON形式）
-  - エラー発生時の通知
-  - 日次サマリー生成
-
-### 2.3 Could（あれば良い機能）
-- **簡易レポート機能**
-  - 週次の案件動向サマリー
-  - 高評価案件の傾向分析
-- **Webダッシュボード**
-  - S3データを読み込む静的サイト（Vercel等）
-  - 設定変更用の簡易UI
-
-## 3. 非機能要件
-
-### 3.1 パフォーマンス要件
-- 15分間隔での実行を確実に実行
-- Lambda関数のタイムアウト: 最大10分
-- 1回の実行で最大50件の案件を処理
-- 実行時間1分以内を目標（コスト削減のため）
-- AI評価は高ポテンシャル案件のみ（コスト削減）
-
-### 3.2 可用性要件
-- AWSサーバレス環境での24時間365日稼働
-- システム障害時の自動復旧機能
-- ネットワーク障害時のリトライ機能（最大3回）
-- 稼働率: 95%以上（個人利用レベル）
-
-### 3.3 セキュリティ要件
-- AWS Systems Manager Parameter Store でのシークレット管理
-- IAMロールによる最小権限アクセス制御
-- S3バケットのプライベート設定
-- 取得データの保護（S3暗号化）
-- ログの機密情報マスキング
-
-### 3.4 運用・保守性要件
-- S3での構造化ログ管理
-- AWS CDK での Infrastructure as Code
-- Lambda関数のバージョン管理
-- エラー時のSNS通知
-- 7日間の自動データ削除（S3 Lifecycle Policy）
-
-### 3.5 コスト要件
-- **月額運用コスト: $5以下を厳守**
-- Lambda実行時間の最適化（1分以内）
-- S3使用量の最小化
-- CloudWatch使用の完全廃止
-- ChatGPT API使用量の制限（事前フィルタリング）
-
-## 4. 制約事項
-
-### 4.1 技術的制約
-- AWS サーバレス環境での開発・運用
-- TypeScript での型安全性確保（any型の使用禁止）
-- Lambda関数の実行時間制限（最大10分）
-- Playwrightブラウザのメモリ制限
-- S3での構造化データ管理（NoSQL機能なし）
-- クラウドワークスの利用規約遵守
-
-### 4.2 運用制約
-- ChatGPT API の利用料金制限（月$3以下）
-- AWS サービス利用料金制限（月$2以下）
-- クラウドワークスへのアクセス頻度制限
-- 1日あたりの最大実行回数: 96回（15分×4×24時間）
-- Lambda同時実行数制限
-- データ保持期間: 最大7日間
-
-### 4.3 その他制約
-- 個人利用目的に限定
-- 商用利用は別途検討が必要
-- スクレイピング対象サイトの仕様変更リスク
-- AWSアカウントの利用可能リージョン制限
-- リアルタイム分析機能なし
-
-## 5. 前提条件
-- AWSアカウントが作成済み
-- 適切なIAM権限が設定済み
-- ChatGPT API キーが取得済み
-- クラウドワークスアカウントが作成済み
-- インターネット接続が安定している
-- AWS CLI/CDK の実行環境
-- 案件は1週間程度でcloseするため短期データ管理で十分
-
-## 6. 用語定義
-| 用語 | 定義 |
-|------|------|
-| 案件 | クラウドワークス上で公開されている仕事の依頼 |
-| 検索条件 | 案件を絞り込むためのフィルター設定 |
-| 評価スコア | AI が算出する案件のおすすめ度（1-10点） |
-| 実行履歴 | システムが自動実行した記録 |
-| スクレイピング | ブラウザ自動操作によるデータ取得 |
-| サーバレス | AWS Lambda等のサーバー管理不要なコンピューティングサービス |
-| EventBridge | AWSのイベント駆動型サービス（旧CloudWatch Events） |
-| 事前フィルタ | AI評価前の予算・キーワード等による絞り込み |
-| TTL | Time To Live、S3での自動削除設定 |
-</file>
-
-<file path="docs/02_system_design.md">
-# システム設計書
-
-## 1. システム概要
-
-### 1.1 システム構成図
-
-```
-                        ┌─────────────────────────────────────┐
-                        │             AWS Cloud                │
-                        │                                     │
-    ┌──────────────────────────────────────────────────────────────┐
-    │                    EventBridge (15分間隔)                      │
-    └──────────────────────┬───────────────────────────────────────┘
-                           │
-                           ▼
-    ┌──────────────────────────────────────────────────────────────┐
-    │                 Lambda Function (Main)                       │
-    │  ┌─────────────┐  ┌──────────────┐  ┌──────────────────┐    │
-    │  │ Scheduler   │  │   Scraper    │  │   AI Evaluator   │    │
-    │  │   Logic     │─▶│ (Playwright) │─▶│  (ChatGPT API)   │    │
-    │  └─────────────┘  └──────────────┘  └──────────────────┘    │
-    └──────────────────────┬───────────────────────┬───────────────┘
-                           │                       │
-                           ▼                       │
-    ┌──────────────────────────────────────────────┼───────────────┐
-    │                     S3 Bucket                │               │
-    │  ┌─────────────────┐  ┌─────────────────┐   │               │
-    │  │ jobs/           │  │   logs/         │   │               │
-    │  │ (案件データ)      │  │ (実行ログ)       │   │               │
-    │  └─────────────────┘  └─────────────────┘   │               │
-    │  ┌─────────────────┐  ┌─────────────────┐   │               │
-    │  │ evaluations/    │  │  config/        │   │               │
-    │  │ (評価結果)        │  │ (設定ファイル)    │   │               │
-    │  └─────────────────┘  └─────────────────┘   │               │
-    └──────────────────────────────────────────────┘               │
-                           │                                       │
-                           ▼                                       │
-    ┌──────────────────────────────────────────────────────────────┘
-    │                 支援サービス（最小構成）
-    │  ┌─────────────────┐  ┌─────────────────┐
-    │  │ Parameter Store │  │      SNS        │
-    │  │  (Secrets)      │  │ (Error Notify)  │
-    │  └─────────────────┘  └─────────────────┘
-    └──────────────────────────────────────────────────────────────┘
-                           │
-                           ▼
-                    ┌──────────────────┐
-                    │ External Services│
-                    │ - CrowdWorks     │
-                    │ - ChatGPT API    │
-                    └──────────────────┘
-```
-
-### 1.2 アーキテクチャ方針
-
-- **コストファースト**: 月$5以下の厳格なコスト制約を最優先
-- **S3中心設計**: データストレージ・ログ・設定をすべてS3で管理
-- **シンプル・軽量**: 複雑な機能を排除し、コア機能に集中
-- **事前フィルタリング**: AI評価前の絞り込みでコスト削減
-- **短期データ管理**: 7日間のTTLで自動削除
-- **型安全性**: TypeScript strict モードで完全な型定義
-
-### 1.3 技術スタック
-
-**コンピューティング**
-- **AWS Lambda** (Node.js 18.x): メイン実行環境
-- **EventBridge**: スケジューリング（15分間隔）
-- **AWS CDK** (TypeScript): Infrastructure as Code
-
-**データ・ストレージ**
-- **S3**: 全データの一元管理（案件・ログ・設定・評価結果）
-- **S3 Lifecycle Policy**: 7日後自動削除
-- **Parameter Store**: シークレット管理のみ
-
-**言語・ライブラリ**
-- **TypeScript** (v5以上): 型安全性確保、any型使用禁止
-- **Playwright**: ブラウザ自動化（Lambda Layer）
-- **AWS SDK v3**: AWS サービス連携
-- **OpenAI SDK**: ChatGPT連携（軽量利用）
-
-**監視・運用（最小構成）**
-- **SNS**: エラー通知のみ
-- **S3ベースログ**: 構造化JSON形式
-
-## 2. コンポーネント設計
-
-### 2.1 スケジューラー
-
-**責務**
-- EventBridge からのトリガー受信
-- Lambda関数の実行制御
-- 実行時間の最適化（1分以内目標）
-
-**実装方式**
-```typescript
-// EventBridge Rule
-const scheduleRule = new events.Rule(this, 'ScheduleRule', {
-  schedule: events.Schedule.rate(Duration.minutes(15)),
-  targets: [new targets.LambdaFunction(mainFunction)]
-});
-
-interface SchedulerEvent {
-  source: 'aws.events';
-  'detail-type': 'Scheduled Event';
-  detail: {};
-}
-```
-
-### 2.2 スクレイパー
-
-**責務**
-- クラウドワークスへの軽量アクセス
-- 効率的なデータ抽出（最大50件/回）
-- 事前フィルタリング実行
-
-**軽量化設計**
-```typescript
-interface IScrapperService {
-  authenticateUser(credentials: LoginCredentials): Promise<void>;
-  searchJobsLight(condition: SearchCondition): Promise<JobData[]>;
-  applyPreFilter(jobs: JobData[]): JobData[]; // AI評価前フィルタ
-  validateJobData(job: JobData): boolean;
-}
-
-// 事前フィルタリング例
-const applyPreFilter = (jobs: JobData[]): JobData[] => {
-  return jobs.filter(job => 
-    job.budget >= 50000 &&           // 最低予算
-    job.clientRating >= 4.0 &&       // クライアント評価
-    hasTargetSkills(job.skills) &&   // スキルマッチング
-    isReasonableDeadline(job.deadline) // 納期チェック
-  );
-};
-```
-
-### 2.3 データストレージ（S3ベース）
-
-**責務**
-- S3での構造化データ管理
-- JSON形式でのシンプルな読み書き
-- TTL機能による自動削除
-
-**ファイル構造設計**
-```typescript
-// S3 Bucket構造
-interface S3Structure {
-  'jobs/': {
-    pattern: 'YYYY-MM-DDTHH-mm.json';
-    example: '2024-01-15T14-30.json';
-    ttl: '7 days';
-  };
-  'evaluations/': {
-    pattern: 'YYYY-MM-DDTHH-mm.json';
-    example: '2024-01-15T14-30.json';
-    ttl: '7 days';
-  };
-  'logs/': {
-    execution: 'YYYY-MM-DDTHH-mm-execution.json';
-    error: 'YYYY-MM-DDTHH-mm-error.json';
-    daily: 'daily-summary/YYYY-MM-DD.json';
-    ttl: '7 days';
-  };
-  'config/': {
-    searchConditions: 'search-conditions.json';
-    system: 'system-config.json';
-    ttl: 'none';
-  };
-}
-
-// データ操作サービス
-class S3DataService {
-  async saveJobs(jobs: JobData[]): Promise<void> {
-    const timestamp = new Date().toISOString().slice(0, 16);
-    await this.s3.putObject({
-      Bucket: this.bucketName,
-      Key: `jobs/${timestamp}.json`,
-      Body: JSON.stringify(jobs, null, 2),
-      ServerSideEncryption: 'AES256'
-    }).promise();
-  }
-
-  async getRecentJobs(hours: number = 24): Promise<JobData[]> {
-    const cutoff = new Date(Date.now() - hours * 60 * 60 * 1000);
-    const objects = await this.listObjectsSince('jobs/', cutoff);
-    
-    const allJobs: JobData[] = [];
-    for (const obj of objects) {
-      const data = await this.getObject(obj.Key);
-      allJobs.push(...JSON.parse(data));
-    }
-    return allJobs;
-  }
-
-  async getExistingJobIds(hours: number = 48): Promise<Set<string>> {
-    const recentJobs = await this.getRecentJobs(hours);
-    return new Set(recentJobs.map(job => job.id));
-  }
-}
-```
-
-### 2.4 AI評価エンジン（軽量版）
-
-**責務**
-- 事前フィルタ済み案件のみ評価
-- バッチ処理での効率化
-- コスト監視機能
-
-**軽量実装**
-```typescript
-class LightAIEvaluatorService {
-  private monthlyUsage: number = 0;
-  private readonly MONTHLY_LIMIT = 3; // $3/月制限
-
-  async evaluateFilteredJobs(jobs: JobData[]): Promise<JobEvaluation[]> {
-    // コスト制限チェック
-    if (this.monthlyUsage >= this.MONTHLY_LIMIT) {
-      throw new Error('Monthly AI budget exceeded');
-    }
-
-    // 最重要案件のみ評価（さらなる絞り込み）
-    const priorityJobs = this.selectPriorityJobs(jobs);
-    
-    const evaluations: JobEvaluation[] = [];
-    for (const job of priorityJobs) {
-      try {
-        const evaluation = await this.evaluateJob(job);
-        evaluations.push(evaluation);
-        
-        // 使用量追跡
-        this.monthlyUsage += this.estimateTokenCost(job);
-        
-      } catch (error) {
-        // AI評価失敗時はデフォルトスコア
-        evaluations.push(this.createDefaultEvaluation(job));
-      }
-    }
-    
-    return evaluations;
-  }
-
-  private selectPriorityJobs(jobs: JobData[]): JobData[] {
-    return jobs
-      .sort((a, b) => b.budget - a.budget) // 高予算順
-      .slice(0, 10); // 上位10件のみ
-  }
-
-  private estimateTokenCost(job: JobData): number {
-    const tokenCount = (job.title.length + job.description.length) / 4;
-    return tokenCount * 0.002 / 1000; // GPT-3.5-turbo価格
-  }
-}
-```
-
-### 2.5 設定管理（S3ベース）
-
-**責務**
-- S3での設定ファイル管理
-- Parameter Store でのシークレット管理
-- 軽量な設定読み込み
-
-**設定構造**
-```typescript
-// config/system-config.json
-interface SystemConfig {
-  scraping: {
-    maxJobsPerExecution: 50;
-    preFilterEnabled: true;
-    minBudget: 50000;
-    minClientRating: 4.0;
-  };
-  ai: {
-    enabled: true;
-    model: 'gpt-3.5-turbo';
-    maxJobsForEvaluation: 10;
-    monthlyBudgetLimit: 3.0;
-  };
-  notification: {
-    enabled: true;
-    scoreThreshold: 7;
-    errorNotificationEnabled: true;
-  };
-  storage: {
-    retentionDays: 7;
-    compressionEnabled: false;
-  };
-}
-
-// config/search-conditions.json
-interface SearchConditions {
-  conditions: Array<{
-    id: string;
-    name: string;
-    keywords: string[];
-    budgetMin: number;
-    budgetMax: number;
-    category: string;
-    workType: 'fixed' | 'hourly';
-    enabled: boolean;
-  }>;
-}
-```
-
-## 3. データフロー
-
-### 3.1 データフロー図
-
-```
-EventBridge ──15分──▶ Lambda Function (Main Handler)
-                            │
-                            ▼
-                    Parameter Store ──シークレット取得──▶ Scraper Service
-                            │                              │
-                            ▼                              ▼
-                    S3 Config ◀──設定読み込み──────── CrowdWorks Site
-                    (search-conditions.json)           │
-                            │                          ▼
-                            ▼                     案件データ取得
-                    S3 Jobs ◀──重複チェック────── Pre-Filter
-                    (過去48時間分)                    │
-                            │                          ▼
-                            ▼                     新規案件
-                    S3 Jobs ◀────新規案件保存──── Light AI Evaluator
-                    (timestamp.json)                  │
-                            │                          ▼
-                            ▼                     評価結果
-                    S3 Evaluations ◀──評価保存─── High Score Filter
-                    (timestamp.json)                  │
-                            │                          ▼
-                            ▼                     通知判定
-                    S3 Logs ◀────実行ログ────── SNS Notification
-                    (execution.json)              (エラー・高評価)
-```
-
-### 3.2 処理フロー
-
-**最適化されたメイン処理フロー**
-```typescript
-export const handler = async (event: SchedulerEvent): Promise<void> => {
-  const executionId = Date.now().toString();
-  const startTime = Date.now();
-  const timestamp = new Date().toISOString().slice(0, 16);
-  
-  const log: ExecutionLog = {
-    executionId,
-    timestamp,
-    status: 'success',
-    duration: 0,
-    jobsScraped: 0,
-    newJobs: 0,
-    aiEvaluated: 0,
-    highScoreJobs: 0,
-    costEstimate: 0
-  };
-
-  try {
-    // 1. 設定とシークレット取得（並列）
-    const [config, credentials] = await Promise.all([
-      s3DataService.getSystemConfig(),
-      parameterService.getCredentials()
-    ]);
-
-    // 2. 重複チェック用データ取得
-    const existingJobIds = await s3DataService.getExistingJobIds(48);
-
-    // 3. スクレイピング実行
-    const scraper = new ScraperService(credentials);
-    const allJobs = await scraper.searchJobsLight(config.searchConditions);
-    log.jobsScraped = allJobs.length;
-
-    // 4. 重複排除
-    const newJobs = allJobs.filter(job => !existingJobIds.has(job.id));
-    log.newJobs = newJobs.length;
-
-    if (newJobs.length === 0) {
-      log.duration = Date.now() - startTime;
-      await s3DataService.saveExecutionLog(log, timestamp);
-      return; // 新規案件なしで終了
-    }
-
-    // 5. 新規案件保存
-    await s3DataService.saveJobs(newJobs, timestamp);
-
-    // 6. 事前フィルタ実行
-    const filteredJobs = scraper.applyPreFilter(newJobs);
-
-    // 7. AI評価（フィルタ後の優先案件のみ）
-    let evaluations: JobEvaluation[] = [];
-    if (config.ai.enabled && filteredJobs.length > 0) {
-      const aiEvaluator = new LightAIEvaluatorService();
-      evaluations = await aiEvaluator.evaluateFilteredJobs(filteredJobs);
-      log.aiEvaluated = evaluations.length;
-      log.costEstimate = aiEvaluator.getSessionCost();
-
-      // 8. 評価結果保存
-      await s3DataService.saveEvaluations(evaluations, timestamp);
-    }
-
-    // 9. 高評価案件通知
-    const highScoreJobs = evaluations.filter(e => e.score >= config.notification.scoreThreshold);
-    log.highScoreJobs = highScoreJobs.length;
-
-    if (highScoreJobs.length > 0) {
-      await notificationService.sendHighScoreAlert(highScoreJobs);
-    }
-
-    // 10. 実行ログ保存
-    log.duration = Date.now() - startTime;
-    await s3DataService.saveExecutionLog(log, timestamp);
-
-  } catch (error) {
-    log.status = 'error';
-    log.error = {
-      type: error.constructor.name,
-      message: error.message,
-      stack: error.stack
-    };
-    log.duration = Date.now() - startTime;
-
-    // エラーログ保存
-    await s3DataService.saveErrorLog(log, timestamp);
-
-    // 重要エラーの通知
-    if (shouldNotifyError(error)) {
-      await notificationService.sendErrorAlert(error, executionId);
-    }
-
-    throw error; // Lambda失敗として記録
-  }
-};
-```
-
-## 4. インターフェース設計
-
-### 4.1 外部API連携
-
-**ChatGPT API（軽量版）**
-```typescript
-interface LightChatGPTRequest {
-  model: 'gpt-3.5-turbo'; // GPT-4は使用しない（コスト削減）
-  messages: ChatCompletionMessage[];
-  max_tokens: 200; // 短縮
-  temperature: 0.3; // 一貫性重視
-  response_format: { type: 'json_object' };
-}
-
-const LIGHT_EVALUATION_PROMPT = `
-案件を簡潔に評価してください（予算:{budget}円、クライアント評価:{clientRating}）：
-
-{title}
-
-スキル: {skills}
-詳細: {description}
-
-JSON形式で回答:
-{"score": 1-10, "reason": "50文字以内"}
-`;
-```
-
-### 4.2 内部データ構造
-
-**軽量化データ型**
-```typescript
-interface JobData {
-  id: string;
-  title: string;
-  description: string; // 500文字まで
-  budget: number;
-  deadline: Date;
-  clientRating: number;
-  skills: string[]; // 最大5個
-  url: string;
-  scrapedAt: Date;
-}
-
-interface JobEvaluation {
-  jobId: string;
-  score: number; // 1-10
-  reason: string; // 50文字以内
-  evaluatedAt: Date;
-  tokenUsed: number; // コスト追跡
-}
-
-interface ExecutionLog {
-  executionId: string;
-  timestamp: string;
-  status: 'success' | 'error' | 'partial';
-  duration: number;
-  jobsScraped: number;
-  newJobs: number;
-  aiEvaluated: number;
-  highScoreJobs: number;
-  costEstimate: number;
-  error?: {
-    type: string;
-    message: string;
-    stack?: string;
-  };
-}
-```
-
-## 5. セキュリティ設計
-
-### 5.1 認証・認可（最小権限）
-
-**IAM ロール設計**
-```typescript
-const lambdaRole = new iam.Role(this, 'LambdaExecutionRole', {
-  assumedBy: new iam.ServicePrincipal('lambda.amazonaws.com'),
-  managedPolicies: [
-    iam.ManagedPolicy.fromAwsManagedPolicyName('service-role/AWSLambdaBasicExecutionRole')
-  ],
-  inlinePolicies: {
-    S3Access: new iam.PolicyDocument({
-      statements: [
-        new iam.PolicyStatement({
-          effect: iam.Effect.ALLOW,
-          actions: [
-            's3:GetObject',
-            's3:PutObject',
-            's3:ListBucket'
-          ],
-          resources: [
-            s3Bucket.bucketArn,
-            `${s3Bucket.bucketArn}/*`
-          ]
-        })
-      ]
-    }),
-    ParameterStoreAccess: new iam.PolicyDocument({
-      statements: [
-        new iam.PolicyStatement({
-          effect: iam.Effect.ALLOW,
-          actions: ['ssm:GetParameter'],
-          resources: [`arn:aws:ssm:${region}:${account}:parameter/crowdworks-searcher/secrets`]
-        })
-      ]
-    }),
-    SNSAccess: new iam.PolicyDocument({
-      statements: [
-        new iam.PolicyStatement({
-          effect: iam.Effect.ALLOW,
-          actions: ['sns:Publish'],
-          resources: [errorTopic.topicArn]
-        })
-      ]
-    })
-  }
-});
-```
-
-### 5.2 データ保護
-
-**S3セキュリティ設定**
-```typescript
-const s3Bucket = new s3.Bucket(this, 'CrowdWorksSearcherBucket', {
-  encryption: s3.BucketEncryption.S3_MANAGED,
-  blockPublicAccess: s3.BlockPublicAccess.BLOCK_ALL,
-  lifecycleRules: [
-    {
-      id: 'DeleteOldData',
-      enabled: true,
-      expiration: Duration.days(7), // 7日後自動削除
-      abortIncompleteMultipartUploadAfter: Duration.days(1)
-    }
-  ],
-  versioning: false, // コスト削減
-  removalPolicy: RemovalPolicy.DESTROY
-});
-```
-
-## 6. エラーハンドリング設計
-
-### 6.1 エラー分類（簡素化）
-
-```typescript
-export enum ErrorType {
-  // 重要エラー（通知必要）
-  AUTHENTICATION_ERROR = 'AUTH_ERROR',
-  LAMBDA_TIMEOUT = 'LAMBDA_TIMEOUT',
-  S3_ACCESS_ERROR = 'S3_ACCESS_ERROR',
-  
-  // 軽微エラー（ログのみ）
-  SCRAPING_ERROR = 'SCRAPING_ERROR',
-  AI_API_ERROR = 'AI_API_ERROR',
-  NETWORK_ERROR = 'NETWORK_ERROR'
-}
-
-export class LightAppError extends Error {
-  constructor(
-    public type: ErrorType,
-    message: string,
-    public retryable: boolean = false
-  ) {
-    super(message);
-  }
-}
-```
-
-### 6.2 エラー処理方針
-
-**軽量エラーハンドリング**
-```typescript
-class LightRetryHandler {
-  async executeWithRetry<T>(
-    operation: () => Promise<T>,
-    maxRetries: number = 2 // 削減
-  ): Promise<T> {
-    for (let attempt = 1; attempt <= maxRetries; attempt++) {
-      try {
-        return await operation();
-      } catch (error) {
-        if (attempt === maxRetries) throw error;
-        await this.sleep(1000 * attempt); // シンプルなバックオフ
-      }
-    }
-    throw new Error('Max retries exceeded');
-  }
-}
-
-const shouldNotifyError = (error: Error): boolean => {
-  const criticalErrors = [
-    'AUTHENTICATION_ERROR',
-    'LAMBDA_TIMEOUT', 
-    'S3_ACCESS_ERROR'
-  ];
-  return criticalErrors.includes(error.constructor.name);
-};
-```
-
-## 7. ログ設計（S3ベース）
-
-### 7.1 S3ログ構造
-
-```typescript
-interface S3LogStructure {
-  'logs/execution/': {
-    pattern: 'YYYY-MM-DDTHH-mm-execution.json';
-    content: ExecutionLog;
-    retention: '7 days';
-  };
-  'logs/error/': {
-    pattern: 'YYYY-MM-DDTHH-mm-error.json';
-    content: ExecutionLog; // status = 'error'
-    retention: '7 days';
-  };
-  'logs/daily-summary/': {
-    pattern: 'YYYY-MM-DD.json';
-    content: DailySummary;
-    retention: '7 days';
-  };
-}
-
-interface DailySummary {
-  date: string;
-  totalExecutions: number;
-  successfulExecutions: number;
-  totalJobsFound: number;
-  totalNewJobs: number;
-  averageScore: number;
-  highScoreJobs: number;
-  totalAICost: number;
-  errors: string[];
-}
-```
-
-### 7.2 ログ実装
-
-**軽量ログサービス**
-```typescript
-class S3LogService {
-  async saveExecutionLog(log: ExecutionLog, timestamp: string): Promise<void> {
-    await this.s3.putObject({
-      Bucket: this.bucketName,
-      Key: `logs/execution/${timestamp}-execution.json`,
-      Body: JSON.stringify(log, null, 2),
-      ContentType: 'application/json'
-    }).promise();
-  }
-
-  async saveErrorLog(log: ExecutionLog, timestamp: string): Promise<void> {
-    await this.s3.putObject({
-      Bucket: this.bucketName,
-      Key: `logs/error/${timestamp}-error.json`,
-      Body: JSON.stringify(log, null, 2),
-      ContentType: 'application/json'
-    }).promise();
-  }
-
-  async generateDailySummary(date: string): Promise<DailySummary> {
-    const dayLogs = await this.getLogsForDate(date);
-    
-    return {
-      date,
-      totalExecutions: dayLogs.length,
-      successfulExecutions: dayLogs.filter(l => l.status === 'success').length,
-      totalJobsFound: dayLogs.reduce((sum, l) => sum + l.jobsScraped, 0),
-      totalNewJobs: dayLogs.reduce((sum, l) => sum + l.newJobs, 0),
-      averageScore: this.calculateAverageScore(dayLogs),
-      highScoreJobs: dayLogs.reduce((sum, l) => sum + l.highScoreJobs, 0),
-      totalAICost: dayLogs.reduce((sum, l) => sum + l.costEstimate, 0),
-      errors: dayLogs.filter(l => l.error).map(l => l.error!.message)
-    };
-  }
-}
-```
-
-## 8. コスト最適化戦略
-
-### 8.1 コスト監視
-
-```typescript
-interface CostMonitor {
-  trackLambdaExecution(duration: number, memoryMB: number): void;
-  trackS3Operations(operations: S3Operation[]): void;
-  trackAIUsage(tokens: number, model: string): void;
-  generateMonthlyCostReport(): MonthlyCostReport;
-}
-
-interface MonthlyCostReport {
-  lambda: { executions: number; cost: number };
-  s3: { operations: number; storage: number; cost: number };
-  ai: { tokens: number; cost: number };
-  other: { sns: number; parameterStore: number };
-  total: number;
-  budgetRemaining: number;
-}
-```
-
-### 8.2 自動コスト制御
-
-```typescript
-class CostController {
-  private monthlyBudget = 5.0; // $5制限
-
-  async checkBudgetBeforeExecution(): Promise<boolean> {
-    const currentCost = await this.getCurrentMonthlyCost();
-    return currentCost < this.monthlyBudget * 0.9; // 90%で制限
-  }
-
-  async suspendExpensiveFeatures(): Promise<void> {
-    // AI評価を一時停止
-    await this.updateConfig({ ai: { enabled: false } });
-    
-    // 通知送信
-    await this.notifyBudgetExceeded();
-  }
-}
-```
-
-**これで月$5以下での運用が可能な設計になりました！**
-</file>
-
 <file path="readme.md">
-クラウドワークスから適切な案件を探すためのソフト
-Docker上でブラウザを定期的に動作させて、クラウドワークスに対してアクセスして、中身を見て、chatGPTに案件のおすすめ度を査定してもらう
-プライベート兼ポートフォリオ用
+# CrowdWorks Search System
 
-## メモ
-repomixを使っている
+クラウドワークス案件自動検索・評価システム  
+AWS Lambda + TypeScript + Docker による サーバレス構成
 
-パブリックリポジトリのため、機密情報には注意を払う
+## 🏗️ アーキテクチャ
 
-低コストで動かすことを考える、GPTによる評価は趣味で入れるがなるべく抑える
+- **言語**: TypeScript (strict mode, any型禁止)
+- **実行環境**: AWS Lambda (Node.js 18)
+- **開発環境**: Docker (Lambda Runtime Interface Emulator)
+- **インフラ**: AWS CDK (Infrastructure as Code)
+- **CI/CD**: GitHub Actions
+- **テスト**: Jest + ts-jest
+
+## 🛠️ 開発環境セットアップ
+
+### 前提条件
+
+- Docker & Docker Compose
+- Git
+- VS Code (推奨)
+
+### 1. リポジトリクローン
+
+```bash
+git clone <repository-url>
+cd crowdworks-search
+```
+
+### 2. Docker環境での開発開始
+
+```bash
+# 開発環境コンテナの起動
+docker-compose up -d
+
+# コンテナ内でシェルを開く
+docker-compose exec crowdworks-search bash
+
+# または、直接コマンド実行
+docker-compose exec crowdworks-search npm run build
+```
+
+### 3. 開発用コマンド
+
+```bash
+# TypeScript ビルド
+npm run build
+
+# 型チェック
+npm run type-check
+
+# Lint チェック
+npm run lint
+
+# フォーマット
+npm run format
+
+# テスト実行
+npm test
+
+# カバレッジ付きテスト
+npm run test:coverage
+
+# 開発モード（ファイル監視）
+npm run dev
+```
+
+## 🐳 Docker環境の詳細
+
+### コンテナ構成
+
+```yaml
+# メイン開発環境
+docker-compose up                    # 開発用コンテナ起動
+
+# テスト専用環境
+docker-compose --profile test up     # テスト実行
+
+# CDK専用環境
+docker-compose --profile cdk up      # AWS CDK操作
+
+# Lambda環境シミュレーション
+docker-compose --profile lambda up   # 本番環境テスト
+```
+
+### ディレクトリマウント
+
+```
+プロジェクトルート  → /workspace (リアルタイム同期)
+~/.aws             → /root/.aws (AWS認証情報)
+```
+
+### 環境変数
+
+```bash
+# 開発環境
+NODE_ENV=development
+AWS_REGION=ap-northeast-1
+LOG_LEVEL=debug
+
+# テスト環境
+NODE_ENV=test
+AWS_REGION=ap-northeast-1
+```
+
+## 🧪 テスト戦略
+
+### テストの種類
+
+```bash
+# 単体テスト
+npm test
+
+# 結合テスト  
+npm run test:integration
+
+# E2Eテスト
+npm run test:e2e
+
+# カバレッジレポート
+npm run test:coverage
+```
+
+### テスト実行（Docker環境）
+
+```bash
+# Docker内でテスト実行
+docker-compose --profile test run --rm test
+
+# カバレッジ確認
+docker-compose --profile test run --rm test npm run test:coverage
+```
+
+## 🏗️ AWS CDK操作
+
+### CDK コマンド
+
+```bash
+# CDK専用コンテナ起動
+docker-compose --profile cdk up -d
+
+# CDK操作
+docker-compose exec cdk cdk synth    # CloudFormation テンプレート生成
+docker-compose exec cdk cdk diff     # 差分確認
+docker-compose exec cdk cdk deploy   # デプロイ
+docker-compose exec cdk cdk destroy  # 削除
+```
+
+### 環境別デプロイ
+
+```bash
+# Staging環境
+docker-compose exec cdk cdk deploy --context stage=staging
+
+# Production環境
+docker-compose exec cdk cdk deploy --context stage=production
+```
+
+## 📝 コード規約
+
+### TypeScript 設定
+
+- **strict mode**: 有効
+- **any型**: 使用禁止 (ESLintエラー)
+- **型定義**: 全関数・変数に必須
+- **未使用変数**: エラー
+
+### ESLint ルール
+
+```typescript
+// ❌ 禁止
+const data: any = response;
+function process(input) { }
+
+// ✅ 推奨
+const data: ResponseData = response;
+function process(input: InputData): OutputData { }
+```
+
+### ディレクトリ構造
+
+```
+src/
+├── types/           # 型定義
+├── services/        # ビジネスロジック
+├── utils/           # ユーティリティ
+├── infrastructure/  # AWS CDK
+└── lambda/          # Lambda関数
+```
+
+## 🚀 CI/CD パイプライン
+
+### GitHub Actions
+
+```mermaid
+graph LR
+    A[Code Push] --> B[Code Quality]
+    B --> C[Unit Tests]
+    B --> D[Build Test]
+    B --> E[CDK Synth]
+    C --> F[Integration Tests]
+    D --> F
+    E --> F
+    F --> G[Deploy Staging]
+    G --> H[Deploy Production]
+```
+
+### 実行タイミング
+
+- **Push to main**: Full pipeline + Staging deploy
+- **Pull Request**: Code quality + tests
+- **Release tag**: Production deploy (manual approval)
+
+## 🔐 シークレット管理
+
+### GitHub Secrets
+
+```bash
+# AWS認証情報
+STAGING_AWS_ACCESS_KEY_ID
+STAGING_AWS_SECRET_ACCESS_KEY
+PRODUCTION_AWS_ACCESS_KEY_ID
+PRODUCTION_AWS_SECRET_ACCESS_KEY
+
+# 外部API
+OPENAI_API_KEY
+CROWDWORKS_EMAIL
+CROWDWORKS_PASSWORD
+```
+
+### ローカル開発
+
+```bash
+# AWS認証情報設定
+docker-compose exec crowdworks-search aws configure
+
+# または ~/.aws をマウント（docker-compose.yml設定済み）
+```
+
+## 🚀 Lambda デプロイ・テスト
+
+### ローカルでのLambda環境テスト
+
+```bash
+# Lambda環境シミュレーション
+docker-compose --profile lambda up
+
+# Lambda関数をテスト実行
+curl -XPOST "http://localhost:9000/2015-03-31/functions/function/invocations" \
+  -d '{"source":"aws.events","detail-type":"Scheduled Event","detail":{}}'
+```
+
+### デプロイ手順
+
+```bash
+# 1. ビルド確認
+npm run build
+
+# 2. CDK 構文チェック
+npm run cdk:synth
+
+# 3. Staging デプロイ
+npm run cdk:deploy -- --context stage=staging
+
+# 4. Production デプロイ（タグベース）
+git tag v1.0.0
+git push origin v1.0.0
+```
+
+## 📊 監視・ログ
+
+### ログ確認
+
+```bash
+# 開発環境ログ
+docker-compose logs -f crowdworks-search
+
+# AWS Lambda ログ
+aws logs tail /aws/lambda/crowdworks-searcher-main --follow
+```
+
+### メトリクス
+
+- **実行時間**: 1分以内目標
+- **成功率**: 95%以上
+- **月間コスト**: $5以下
+
+## 🔧 トラブルシューティング
+
+### よくある問題
+
+#### TypeScript エラー
+
+```bash
+# 型チェック
+npm run type-check
+
+# ビルドクリア
+npm run clean && npm run build
+```
+
+#### Docker ビルドエラー
+
+```bash
+# イメージ再ビルド
+docker-compose build --no-cache
+
+# ボリューム削除
+docker-compose down -v
+```
+
+#### Jest テストエラー
+
+```bash
+# キャッシュクリア
+docker-compose exec crowdworks-search npm test -- --clearCache
+
+# 特定テスト実行
+docker-compose exec crowdworks-search npm test -- test/sample.test.ts
+```
+
+## 📚 参考資料
+
+- [AWS Lambda Node.js](https://docs.aws.amazon.com/lambda/latest/dg/lambda-nodejs.html)
+- [AWS CDK TypeScript](https://docs.aws.amazon.com/cdk/v2/guide/work-with-cdk-typescript.html)
+- [TypeScript Strict Mode](https://www.typescriptlang.org/docs/handbook/2/basic-types.html#strictness)
+- [Jest Testing Framework](https://jestjs.io/docs/getting-started)
+
+## 🤝 コントリビューション
+
+1. Feature ブランチを作成
+2. 変更をコミット
+3. テストを実行
+4. Pull Request を作成
+
+## 📄 ライセンス
+
+MIT License
 </file>
 
 </files>

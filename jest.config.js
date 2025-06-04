@@ -6,8 +6,7 @@ module.exports = {
     // TypeScript設定
     transform: {
         '^.+\\.tsx?$': ['ts-jest', {
-            tsconfig: './tsconfig.json',
-            isolatedModules: true
+            tsconfig: './tsconfig.json'
         }]
     },
 
@@ -15,7 +14,7 @@ module.exports = {
     moduleFileExtensions: ['ts', 'tsx', 'js', 'jsx', 'json'],
 
     // パスマッピング（tsconfig.jsonと同期）
-    moduleNameMapping: {
+    moduleNameMapper: {
         '^@/(.*)$': '<rootDir>/src/$1',
         '^@/types/(.*)$': '<rootDir>/src/types/$1',
         '^@/services/(.*)$': '<rootDir>/src/services/$1',
@@ -72,14 +71,6 @@ module.exports = {
 
     // 不要なログを抑制
     silent: false,
-
-    // Jest環境での警告を抑制
-    globals: {
-        'ts-jest': {
-            useESM: false,
-            tsconfig: './tsconfig.json'
-        }
-    },
 
     // テスト実行前後のフック
     globalSetup: undefined,

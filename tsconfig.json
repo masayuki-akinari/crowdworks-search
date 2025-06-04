@@ -6,7 +6,6 @@
             "ES2022"
         ],
         "outDir": "./dist",
-        "rootDir": "./src",
         "removeComments": true,
         "declaration": true,
         "declarationMap": true,
@@ -57,12 +56,15 @@
     },
     "include": [
         "src/**/*",
-        "test/**/*"
+        "app.ts"
     ],
     "exclude": [
         "node_modules",
         "dist",
         "cdk.out",
+        "test",
+        "**/*.test.ts",
+        "**/*.spec.ts",
         "*.js"
     ],
     "ts-node": {
