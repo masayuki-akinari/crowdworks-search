@@ -5,6 +5,7 @@
         "lib": [
             "ES2022"
         ],
+        "rootDir": "./src",
         "outDir": "./dist",
         "removeComments": true,
         "declaration": true,
@@ -55,8 +56,7 @@
         }
     },
     "include": [
-        "src/**/*",
-        "app.ts"
+        "src/**/*"
     ],
     "exclude": [
         "node_modules",
