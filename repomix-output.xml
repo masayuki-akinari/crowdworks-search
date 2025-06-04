@@ -1,0 +1,493 @@
+This file is a merged representation of the entire codebase, combined into a single document by Repomix.
+
+<file_summary>
+This section contains a summary of this file.
+
+<purpose>
+This file contains a packed representation of the entire repository's contents.
+It is designed to be easily consumable by AI systems for analysis, code review,
+or other automated processes.
+</purpose>
+
+<file_format>
+The content is organized as follows:
+1. This summary section
+2. Repository information
+3. Directory structure
+4. Repository files (if enabled)
+5. Multiple file entries, each consisting of:
+  - File path as an attribute
+  - Full contents of the file
+</file_format>
+
+<usage_guidelines>
+- This file should be treated as read-only. Any changes should be made to the
+  original repository files, not this packed version.
+- When processing this file, use the file path to distinguish
+  between different files in the repository.
+- Be aware that this file may contain sensitive information. Handle it with
+  the same level of security as you would the original repository.
+</usage_guidelines>
+
+<notes>
+- Some files may have been excluded based on .gitignore rules and Repomix's configuration
+- Binary files are not included in this packed representation. Please refer to the Repository Structure section for a complete list of file paths, including binary files
+- Files matching patterns in .gitignore are excluded
+- Files matching default ignore patterns are excluded
+- Files are sorted by Git change count (files with more changes are at the bottom)
+</notes>
+
+</file_summary>
+
+<directory_structure>
+docs/01_requirements.md
+docs/02_system_design.md
+docs/03_data_design.md
+docs/04_api_design.md
+docs/05_implementation_plan.md
+docs/README.md
+readme.md
+</directory_structure>
+
+<files>
+This section contains the contents of the repository's files.
+
+<file path="docs/01_requirements.md">
+# 要件定義書
+
+## 1. プロジェクト概要
+
+### 1.1 プロジェクト名
+クラウドワークス案件自動検索・評価システム（CrowdWorks Auto Job Searcher）
+
+### 1.2 目的・背景
+クラウドワークス上で適切な案件を効率的に発見し、案件の品質やマッチング度を自動評価することで、フリーランサーの案件選定業務を自動化・効率化する。
+
+**背景**
+- 手動での案件チェックは時間がかかる
+- 良い案件を見逃すリスクがある
+- 案件の評価に主観が入りやすい
+- 定期的なチェックが困難
+
+### 1.3 スコープ
+**対象範囲**
+- クラウドワークス上の案件情報の自動取得
+- AI（ChatGPT）による案件評価
+- 検索条件の管理・保存
+- 定期実行による継続監視
+
+**対象外**
+- 他のクラウドソーシングサイト
+- 案件への自動応募機能
+- クライアントとのやり取り自動化
+
+## 2. 機能要件
+
+### 2.1 Must（必須機能）
+- **検索条件管理機能**
+  - 検索条件の保存・読み込み
+  - 複数の検索条件セットの管理
+- **自動取得機能**
+  - 15分間隔での自動実行
+  - Docker環境での安定動作
+  - ブラウザ自動操作によるデータ取得
+- **AI評価機能**
+  - ChatGPT APIを使用した案件評価
+  - おすすめ度のスコアリング（1-10点）
+  - 評価理由の文章生成
+- **データ保存機能**
+  - 取得した案件データの永続化
+  - 評価結果の履歴保存
+  - 重複案件の検出・除外
+
+### 2.2 Should（重要機能）
+- **通知機能**
+  - 高評価案件の即座通知
+  - 実行結果のレポート機能
+- **フィルタリング機能**
+  - 予算範囲での絞り込み
+  - スキルセットマッチング
+  - 納期条件でのフィルタ
+- **ログ・監視機能**
+  - 実行ログの記録
+  - エラー発生時の通知
+  - 実行統計の表示
+
+### 2.3 Could（あれば良い機能）
+- **分析・レポート機能**
+  - 案件動向の分析
+  - 成功率の高い案件パターン特定
+- **学習機能**
+  - ユーザーフィードバックによる評価精度向上
+  - 過去の受注履歴から好みを学習
+- **UI機能**
+  - Webベースの管理画面
+  - 設定変更用のダッシュボード
+
+## 3. 非機能要件
+
+### 3.1 パフォーマンス要件
+- 15分間隔での実行を確実に実行
+- 1回の実行で最大100件の案件を処理
+- ChatGPT API のレスポンス時間考慮（1件あたり最大30秒）
+- メモリ使用量: 最大1GB以下
+
+### 3.2 可用性要件
+- Docker環境での24時間365日稼働
+- システム障害時の自動復旧機能
+- ネットワーク障害時のリトライ機能（最大3回）
+- 稼働率: 95%以上
+
+### 3.3 セキュリティ要件
+- ログイン情報の安全な管理（環境変数での管理）
+- API キーの暗号化保存
+- 取得データの適切な保護
+- ログ情報の機密情報マスキング
+
+### 3.4 運用・保守性要件
+- ログレベルの設定可能
+- 設定ファイルによる動作変更
+- エラー発生時の詳細ログ出力
+- Docker コンテナでの簡単デプロイ
+
+## 4. 制約事項
+
+### 4.1 技術的制約
+- Windows環境での開発・運用
+- Docker Desktop for Windows 使用
+- TypeScript での型安全性確保（any型の使用禁止）
+- クラウドワークスの利用規約遵守
+
+### 4.2 運用制約
+- ChatGPT API の利用料金制限
+- クラウドワークスへのアクセス頻度制限
+- 1日あたりの最大実行回数: 96回（15分×4×24時間）
+
+### 4.3 その他制約
+- 個人利用目的に限定
+- 商用利用は別途検討が必要
+- スクレイピング対象サイトの仕様変更リスク
+
+## 5. 前提条件
+- Docker Desktop がインストール済み
+- ChatGPT API キーが取得済み
+- クラウドワークスアカウントが作成済み
+- インターネット接続が安定している
+- Windows 10/11 環境
+
+## 6. 用語定義
+| 用語 | 定義 |
+|------|------|
+| 案件 | クラウドワークス上で公開されている仕事の依頼 |
+| 検索条件 | 案件を絞り込むためのフィルター設定 |
+| 評価スコア | AI が算出する案件のおすすめ度（1-10点） |
+| 実行履歴 | システムが自動実行した記録 |
+| スクレイピング | ブラウザ自動操作によるデータ取得 |
+</file>
+
+<file path="docs/02_system_design.md">
+# システム設計書
+
+## 1. システム概要
+
+### 1.1 システム構成図
+
+
+### 1.2 アーキテクチャ方針
+
+
+### 1.3 技術スタック
+
+
+## 2. コンポーネント設計
+
+### 2.1 スケジューラー
+
+
+### 2.2 スクレイパー
+
+
+### 2.3 データストレージ
+
+
+### 2.4 AI評価エンジン
+
+
+### 2.5 設定管理
+
+
+## 3. データフロー
+
+### 3.1 データフロー図
+
+
+### 3.2 処理フロー
+
+
+## 4. インターフェース設計
+
+### 4.1 外部API連携
+
+
+### 4.2 内部API設計
+
+
+## 5. セキュリティ設計
+
+### 5.1 認証・認可
+
+
+### 5.2 データ保護
+
+
+## 6. エラーハンドリング設計
+
+### 6.1 エラー分類
+
+
+### 6.2 エラー処理方針
+
+
+## 7. ログ設計
+
+### 7.1 ログレベル定義
+
+
+### 7.2 ログ出力方針
+</file>
+
+<file path="docs/03_data_design.md">
+# データ設計書
+
+## 1. データベース設計
+
+### 1.1 ER図
+
+
+### 1.2 テーブル定義
+
+#### 1.2.1 検索条件テーブル (search_conditions)
+
+
+#### 1.2.2 案件データテーブル (job_data)
+
+
+#### 1.2.3 評価結果テーブル (evaluations)
+
+
+#### 1.2.4 実行履歴テーブル (execution_logs)
+
+
+### 1.3 インデックス設計
+
+
+## 2. データ型定義
+
+### 2.1 TypeScript型定義
+
+#### 2.1.1 検索条件型
+
+
+#### 2.1.2 案件データ型
+
+
+#### 2.1.3 評価結果型
+
+
+#### 2.1.4 設定型
+
+
+## 3. データ移行・初期化
+
+### 3.1 初期データ
+
+
+### 3.2 マイグレーション戦略
+
+
+## 4. データバックアップ・復旧
+
+### 4.1 バックアップ方針
+
+
+### 4.2 復旧手順
+</file>
+
+<file path="docs/04_api_design.md">
+# API設計書
+
+## 1. API概要
+
+### 1.1 API方針
+
+
+### 1.2 認証方式
+
+
+### 1.3 エラーレスポンス共通仕様
+
+
+## 2. 内部API設計
+
+### 2.1 スケジューラーAPI
+
+#### 2.1.1 実行開始
+
+
+#### 2.1.2 実行停止
+
+
+#### 2.1.3 実行状況確認
+
+
+### 2.2 検索条件管理API
+
+#### 2.2.1 検索条件保存
+
+
+#### 2.2.2 検索条件取得
+
+
+#### 2.2.3 検索条件更新
+
+
+#### 2.2.4 検索条件削除
+
+
+### 2.3 案件データAPI
+
+#### 2.3.1 案件データ取得
+
+
+#### 2.3.2 案件データ検索
+
+
+### 2.4 評価結果API
+
+#### 2.4.1 評価結果取得
+
+
+#### 2.4.2 評価結果統計
+
+
+## 3. 外部API連携
+
+### 3.1 ChatGPT API
+
+
+### 3.2 クラウドワークス（スクレイピング）
+
+
+## 4. Webhook設計
+
+### 4.1 通知Webhook
+</file>
+
+<file path="docs/05_implementation_plan.md">
+# 実装計画書
+
+## 1. 開発フェーズ
+
+### Phase 1: 基盤構築
+
+
+### Phase 2: コア機能実装
+
+
+### Phase 3: AI連携機能
+
+
+### Phase 4: 運用機能・改善
+
+
+## 2. マイルストーン
+
+### 2.1 短期目標（1-2週間）
+
+
+### 2.2 中期目標（1ヶ月）
+
+
+### 2.3 長期目標（3ヶ月）
+
+
+## 3. タスク分解
+
+### 3.1 環境構築タスク
+
+
+### 3.2 開発タスク
+
+
+### 3.3 テストタスク
+
+
+### 3.4 デプロイタスク
+
+
+## 4. リスク管理
+
+### 4.1 技術的リスク
+
+
+### 4.2 スケジュールリスク
+
+
+### 4.3 対策・回避策
+
+
+## 5. 品質管理
+
+### 5.1 コードレビュー方針
+
+
+### 5.2 テスト方針
+
+
+### 5.3 品質指標
+</file>
+
+<file path="docs/README.md">
+# 設計書インデックス
+
+クラウドワークス案件自動検索・評価システムの設計書です。
+
+## 📚 設計書一覧
+
+### 1. [要件定義書](./01_requirements.md)
+プロジェクトの目的、機能要件、非機能要件を定義
+
+### 2. [システム設計書](./02_system_design.md)  
+システム全体のアーキテクチャとコンポーネント設計
+
+### 3. [データ設計書](./03_data_design.md)
+データベース設計とデータ型定義
+
+### 4. [API設計書](./04_api_design.md)
+内部API・外部API連携の仕様定義
+
+### 5. [実装計画書](./05_implementation_plan.md)
+開発フェーズとタスク分解、スケジュール
+
+## 🔄 設計書作成の進め方
+
+1. **要件定義書** から開始
+2. **システム設計書** で全体像を整理
+3. **データ設計書** でデータ構造を決定
+4. **API設計書** でインターフェースを定義
+5. **実装計画書** で開発を計画
+
+## 📝 更新履歴
+
+| 日付 | 更新者 | 更新内容 |
+|------|--------|----------|
+|      |        |          |
+</file>
+
+<file path="readme.md">
+クラウドワークスから適切な案件を探すためのソフト
+Docker上でブラウザを定期的に動作させて、クラウドワークスに対してアクセスして、中身を見て、chatGPTに案件のおすすめ度を査定してもらう
+プライベート兼ポートフォリオ用
+</file>
+
+</files>
