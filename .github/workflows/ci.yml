@@ -53,16 +53,11 @@ jobs:
 
       - name: Build Docker image for testing
         run: |
-          docker build -t crowdworks-search:test .
+          docker build --target test -t crowdworks-searcher:test .
 
       - name: Run unit tests in Docker
         run: |
-          docker run --rm \
-            -v ${{ github.workspace }}:/workspace \
-            -e NODE_ENV=test \
-            -e AWS_REGION=${{ env.AWS_REGION }} \
-            crowdworks-search:test \
-            npm run test:coverage
+          docker run --rm crowdworks-searcher:test
 
       - name: Upload coverage reports
         uses: codecov/codecov-action@v3

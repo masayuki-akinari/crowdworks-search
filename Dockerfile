@@ -13,56 +13,66 @@ RUN yum update -y && \
     unzip \
     which \
     procps \
+    chromium \
     && yum clean all
 
-# AWS CLI v2のインストール
+# AWS CLIのインストール
 RUN curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip" && \
     unzip awscliv2.zip && \
     ./aws/install && \
     rm -rf awscliv2.zip aws
 
-# AWS CDK CLIのグローバルインストール
+# AWS CDKのインストール
 RUN npm install -g aws-cdk@latest
 
 # 作業ディレクトリの設定
 WORKDIR /workspace
 
-# package.jsonとpackage-lock.jsonをコピー（依存関係のキャッシュ効率化）
+# package.jsonとpackage-lock.jsonをコピー
 COPY package*.json ./
 
 # 依存関係のインストール
 RUN npm ci
 
-# Playwrightブラウザのインストール（Lambda Layer用）
-RUN npx playwright install --with-deps chromium
+# Playwrightの設定（Chromiumは既にインストール済み）
+ENV PLAYWRIGHT_BROWSERS_PATH=/usr/bin
+ENV PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1
 
 # === 開発用ステージ ===
 FROM base as development
 
-# 開発用の追加パッケージ
-RUN npm install -g nodemon ts-node
-
-# アプリケーションのソースコードをコピー
+# ソースコードをコピー
 COPY . .
 
 # TypeScriptのビルド
 RUN npm run build
 
-# 開発用ポートを公開（将来的なAPI Gateway Local用）
-EXPOSE 3000
-
 # 開発用のデフォルトコマンド
 CMD ["npm", "run", "dev"]
+
+# === テスト用ステージ ===
+FROM base as test
+
+# ソースコードをコピー
+COPY . .
+
+# TypeScriptのビルド
+RUN npm run build
+
+# テスト実行
+CMD ["npm", "test"]
 
 # === 本番用ステージ ===
 FROM base as production
 
-# 本番用の最小限パッケージのみインストール
-COPY package*.json ./
-RUN npm ci --only=production && npm cache clean --force
+# 本番用の依存関係のみインストール
+RUN npm ci --only=production
 
-# ビルド済みアプリケーションをコピー
-COPY --from=development /workspace/dist ./dist
+# ソースコードをコピー
+COPY . .
 
-# Lambda関数ハンドラーの設定
-CMD ["dist/lambda/handler.lambdaHandler"] 
+# TypeScriptのビルド
+RUN npm run build
+
+# 本番用のデフォルトコマンド
+CMD ["npm", "start"] 
