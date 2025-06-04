@@ -52,197 +52,6 @@ readme.md
 <files>
 This section contains the contents of the repository's files.
 
-<file path="docs/03_data_design.md">
-# データ設計書
-
-## 1. データベース設計
-
-### 1.1 ER図
-
-
-### 1.2 テーブル定義
-
-#### 1.2.1 検索条件テーブル (search_conditions)
-
-
-#### 1.2.2 案件データテーブル (job_data)
-
-
-#### 1.2.3 評価結果テーブル (evaluations)
-
-
-#### 1.2.4 実行履歴テーブル (execution_logs)
-
-
-### 1.3 インデックス設計
-
-
-## 2. データ型定義
-
-### 2.1 TypeScript型定義
-
-#### 2.1.1 検索条件型
-
-
-#### 2.1.2 案件データ型
-
-
-#### 2.1.3 評価結果型
-
-
-#### 2.1.4 設定型
-
-
-## 3. データ移行・初期化
-
-### 3.1 初期データ
-
-
-### 3.2 マイグレーション戦略
-
-
-## 4. データバックアップ・復旧
-
-### 4.1 バックアップ方針
-
-
-### 4.2 復旧手順
-</file>
-
-<file path="docs/04_api_design.md">
-# API設計書
-
-## 1. API概要
-
-### 1.1 API方針
-
-
-### 1.2 認証方式
-
-
-### 1.3 エラーレスポンス共通仕様
-
-
-## 2. 内部API設計
-
-### 2.1 スケジューラーAPI
-
-#### 2.1.1 実行開始
-
-
-#### 2.1.2 実行停止
-
-
-#### 2.1.3 実行状況確認
-
-
-### 2.2 検索条件管理API
-
-#### 2.2.1 検索条件保存
-
-
-#### 2.2.2 検索条件取得
-
-
-#### 2.2.3 検索条件更新
-
-
-#### 2.2.4 検索条件削除
-
-
-### 2.3 案件データAPI
-
-#### 2.3.1 案件データ取得
-
-
-#### 2.3.2 案件データ検索
-
-
-### 2.4 評価結果API
-
-#### 2.4.1 評価結果取得
-
-
-#### 2.4.2 評価結果統計
-
-
-## 3. 外部API連携
-
-### 3.1 ChatGPT API
-
-
-### 3.2 クラウドワークス（スクレイピング）
-
-
-## 4. Webhook設計
-
-### 4.1 通知Webhook
-</file>
-
-<file path="docs/05_implementation_plan.md">
-# 実装計画書
-
-## 1. 開発フェーズ
-
-### Phase 1: 基盤構築
-
-
-### Phase 2: コア機能実装
-
-
-### Phase 3: AI連携機能
-
-
-### Phase 4: 運用機能・改善
-
-
-## 2. マイルストーン
-
-### 2.1 短期目標（1-2週間）
-
-
-### 2.2 中期目標（1ヶ月）
-
-
-### 2.3 長期目標（3ヶ月）
-
-
-## 3. タスク分解
-
-### 3.1 環境構築タスク
-
-
-### 3.2 開発タスク
-
-
-### 3.3 テストタスク
-
-
-### 3.4 デプロイタスク
-
-
-## 4. リスク管理
-
-### 4.1 技術的リスク
-
-
-### 4.2 スケジュールリスク
-
-
-### 4.3 対策・回避策
-
-
-## 5. 品質管理
-
-### 5.1 コードレビュー方針
-
-
-### 5.2 テスト方針
-
-
-### 5.3 品質指標
-</file>
-
 <file path="docs/README.md">
 # 設計書インデックス
 
@@ -278,6 +87,2503 @@ This section contains the contents of the repository's files.
 | 日付 | 更新者 | 更新内容 |
 |------|--------|----------|
 |      |        |          |
+</file>
+
+<file path="docs/03_data_design.md">
+# データ設計書
+
+## 1. データストレージ設計
+
+### 1.1 S3バケット構造
+
+```
+crowdworks-searcher-bucket/
+├── jobs/                           # 案件データ
+│   ├── 2024-01-15T14-30.json     # タイムスタンプ形式
+│   ├── 2024-01-15T14-45.json
+│   └── ...
+├── evaluations/                    # AI評価結果
+│   ├── 2024-01-15T14-30.json
+│   ├── 2024-01-15T14-45.json
+│   └── ...
+├── logs/                           # 実行・エラーログ
+│   ├── execution/
+│   │   ├── 2024-01-15T14-30-execution.json
+│   │   └── ...
+│   ├── error/
+│   │   ├── 2024-01-15T14-30-error.json
+│   │   └── ...
+│   └── daily-summary/
+│       ├── 2024-01-15.json
+│       └── ...
+└── config/                         # 設定ファイル
+    ├── search-conditions.json     # 検索条件
+    └── system-config.json         # システム設定
+```
+
+### 1.2 ファイル命名規則
+
+```typescript
+interface FileNamingConvention {
+  jobs: 'YYYY-MM-DDTHH-mm.json';           // 2024-01-15T14-30.json
+  evaluations: 'YYYY-MM-DDTHH-mm.json';   // 2024-01-15T14-30.json
+  executionLogs: 'YYYY-MM-DDTHH-mm-execution.json';
+  errorLogs: 'YYYY-MM-DDTHH-mm-error.json';
+  dailySummary: 'YYYY-MM-DD.json';         // 2024-01-15.json
+  searchConditions: 'search-conditions.json';
+  systemConfig: 'system-config.json';
+}
+```
+
+### 1.3 ライフサイクル管理
+
+```typescript
+interface S3LifecyclePolicy {
+  rules: [
+    {
+      id: 'DeleteOldData';
+      status: 'Enabled';
+      transitions: [];
+      expiration: {
+        days: 7; // 7日後自動削除
+      };
+      filter: {
+        prefix: 'jobs/'; // jobs/, evaluations/, logs/ 対象
+      };
+    },
+    {
+      id: 'KeepConfig';
+      status: 'Enabled';
+      expiration: null; // config/ は削除しない
+      filter: {
+        prefix: 'config/';
+      };
+    }
+  ];
+}
+```
+
+## 2. データ型定義
+
+### 2.1 TypeScript型定義
+
+#### 2.1.1 案件データ型（軽量版）
+
+```typescript
+interface JobData {
+  // 基本情報
+  id: string;                    // 案件ID（ユニーク）
+  title: string;                 // 案件タイトル
+  description: string;           // 案件詳細（最大500文字）
+  url: string;                   // 案件URL
+  
+  // 条件情報
+  budget: number;                // 予算（円）
+  deadline: Date;                // 納期
+  workType: 'fixed' | 'hourly'; // 固定報酬 or 時間単価
+  category: string;              // カテゴリ
+  
+  // クライアント情報
+  clientName: string;            // クライアント名
+  clientRating: number;          // クライアント評価（1-5）
+  clientReviews: number;         // レビュー数
+  
+  // スキル・要件
+  skills: string[];              // 必要スキル（最大5個）
+  experience: 'beginner' | 'intermediate' | 'expert'; // 経験レベル
+  
+  // メタ情報
+  scrapedAt: Date;              // 取得日時
+  source: 'crowdworks';         // 取得元（将来拡張用）
+}
+
+// バリデーション関数
+const validateJobData = (job: JobData): boolean => {
+  return (
+    job.id.length > 0 &&
+    job.title.length > 0 &&
+    job.description.length <= 500 &&
+    job.budget > 0 &&
+    job.skills.length <= 5 &&
+    job.clientRating >= 1 && job.clientRating <= 5
+  );
+};
+```
+
+#### 2.1.2 評価結果型（軽量版）
+
+```typescript
+interface JobEvaluation {
+  // 関連情報
+  jobId: string;                // 対象案件ID
+  evaluatedAt: Date;           // 評価日時
+  
+  // 評価結果
+  score: number;               // おすすめ度（1-10）
+  reason: string;              // 評価理由（最大50文字）
+  
+  // メタ情報
+  aiModel: 'gpt-3.5-turbo';    // 使用AIモデル
+  tokenUsed: number;           // 使用トークン数
+  costEstimate: number;        // 推定コスト（USD）
+  
+  // 評価詳細（簡素化）
+  strengths: string[];         // 強み（最大3個）
+  concerns: string[];          // 懸念点（最大3個）
+}
+
+// デフォルト評価（AI失敗時）
+const createDefaultEvaluation = (jobId: string): JobEvaluation => ({
+  jobId,
+  evaluatedAt: new Date(),
+  score: 5, // デフォルトスコア
+  reason: 'AI評価失敗のため暫定スコア',
+  aiModel: 'gpt-3.5-turbo',
+  tokenUsed: 0,
+  costEstimate: 0,
+  strengths: [],
+  concerns: ['AI評価未実施']
+});
+```
+
+#### 2.1.3 実行ログ型
+
+```typescript
+interface ExecutionLog {
+  // 実行情報
+  executionId: string;         // 実行ID（タイムスタンプベース）
+  timestamp: string;           // 実行開始時刻（ISO形式）
+  status: 'success' | 'error' | 'partial'; // 実行ステータス
+  duration: number;            // 実行時間（ミリ秒）
+  
+  // 処理結果
+  jobsScraped: number;         // スクレイピング件数
+  newJobs: number;             // 新規案件数
+  aiEvaluated: number;         // AI評価件数
+  highScoreJobs: number;       // 高評価案件数（閾値以上）
+  
+  // コスト情報
+  costEstimate: number;        // 推定コスト（USD）
+  
+  // エラー情報（該当時のみ）
+  error?: {
+    type: string;              // エラータイプ
+    message: string;           // エラーメッセージ
+    stack?: string;            // スタックトレース
+  };
+}
+```
+
+#### 2.1.4 設定型
+
+```typescript
+// システム設定（config/system-config.json）
+interface SystemConfig {
+  scraping: {
+    maxJobsPerExecution: 50;          // 最大処理件数
+    preFilterEnabled: true;           // 事前フィルタ有効
+    minBudget: 50000;                 // 最低予算（円）
+    minClientRating: 4.0;             // 最低クライアント評価
+    maxDescriptionLength: 500;        // 説明文最大長
+  };
+  
+  ai: {
+    enabled: true;                    // AI評価有効
+    model: 'gpt-3.5-turbo';          // 使用モデル
+    maxJobsForEvaluation: 10;        // 最大AI評価件数
+    monthlyBudgetLimit: 3.0;         // 月間予算制限（USD）
+    maxTokensPerRequest: 200;        // リクエスト最大トークン
+    temperature: 0.3;                // 応答の一貫性
+  };
+  
+  notification: {
+    enabled: true;                   // 通知有効
+    scoreThreshold: 7;               // 高評価閾値
+    errorNotificationEnabled: true;   // エラー通知有効
+    dailySummaryEnabled: true;       // 日次サマリー有効
+  };
+  
+  storage: {
+    retentionDays: 7;                // データ保持日数
+    compressionEnabled: false;        // 圧縮無効（コスト削減）
+    backupEnabled: false;            // バックアップ無効（コスト削減）
+  };
+  
+  performance: {
+    timeoutSeconds: 600;             // タイムアウト（10分）
+    retryCount: 2;                   // リトライ回数
+    concurrentLimit: 1;              // 同時実行数制限
+  };
+}
+
+// 検索条件設定（config/search-conditions.json）
+interface SearchConditions {
+  version: string;                   // 設定バージョン
+  lastUpdated: Date;                 // 最終更新日時
+  
+  conditions: Array<{
+    id: string;                      // 条件ID
+    name: string;                    // 条件名
+    enabled: boolean;                // 有効フラグ
+    
+    // 基本条件
+    keywords: string[];              // キーワード（最大10個）
+    budgetMin: number;               // 最低予算
+    budgetMax: number;               // 最高予算
+    category: string;                // カテゴリ
+    workType: 'fixed' | 'hourly' | 'both'; // 作業形式
+    
+    // フィルタ条件
+    clientRatingMin: number;         // 最低クライアント評価
+    experienceLevel: 'beginner' | 'intermediate' | 'expert' | 'any';
+    
+    // 除外条件
+    excludeKeywords: string[];       // 除外キーワード
+    excludeClients: string[];        // 除外クライアント
+  }>;
+}
+```
+
+## 3. データ操作設計
+
+### 3.1 S3データサービス
+
+```typescript
+class S3DataService {
+  private s3: S3Client;
+  private bucketName: string;
+
+  // 案件データ操作
+  async saveJobs(jobs: JobData[], timestamp: string): Promise<void> {
+    const key = `jobs/${timestamp}.json`;
+    const body = JSON.stringify(jobs.map(this.sanitizeJobData), null, 2);
+    
+    await this.s3.putObject({
+      Bucket: this.bucketName,
+      Key: key,
+      Body: body,
+      ContentType: 'application/json',
+      ServerSideEncryption: 'AES256',
+      Metadata: {
+        'job-count': jobs.length.toString(),
+        'created-at': new Date().toISOString()
+      }
+    });
+  }
+
+  async getRecentJobs(hours: number = 24): Promise<JobData[]> {
+    const cutoff = new Date(Date.now() - hours * 60 * 60 * 1000);
+    const objects = await this.listObjectsSince('jobs/', cutoff);
+    
+    const allJobs: JobData[] = [];
+    for (const obj of objects.slice(0, 10)) { // 最大10ファイル
+      const data = await this.getObject(obj.Key!);
+      const jobs: JobData[] = JSON.parse(data);
+      allJobs.push(...jobs);
+    }
+    
+    return allJobs;
+  }
+
+  async getExistingJobIds(hours: number = 48): Promise<Set<string>> {
+    const recentJobs = await this.getRecentJobs(hours);
+    return new Set(recentJobs.map(job => job.id));
+  }
+
+  // 設定操作
+  async getSystemConfig(): Promise<SystemConfig> {
+    try {
+      const data = await this.getObject('config/system-config.json');
+      return JSON.parse(data);
+    } catch (error) {
+      return this.getDefaultSystemConfig();
+    }
+  }
+
+  async getSearchConditions(): Promise<SearchConditions> {
+    try {
+      const data = await this.getObject('config/search-conditions.json');
+      return JSON.parse(data);
+    } catch (error) {
+      return this.getDefaultSearchConditions();
+    }
+  }
+
+  // ユーティリティメソッド
+  private async listObjectsSince(prefix: string, since: Date): Promise<_Object[]> {
+    const response = await this.s3.listObjectsV2({
+      Bucket: this.bucketName,
+      Prefix: prefix,
+      MaxKeys: 50 // コスト削減
+    });
+
+    return (response.Contents || [])
+      .filter(obj => obj.LastModified && obj.LastModified >= since)
+      .sort((a, b) => (b.LastModified?.getTime() || 0) - (a.LastModified?.getTime() || 0));
+  }
+
+  private async getObject(key: string): Promise<string> {
+    const response = await this.s3.getObject({
+      Bucket: this.bucketName,
+      Key: key
+    });
+
+    return response.Body?.transformToString() || '';
+  }
+
+  private sanitizeJobData(job: JobData): JobData {
+    return {
+      ...job,
+      description: job.description.slice(0, 500), // 長さ制限
+      skills: job.skills.slice(0, 5), // 配列長制限
+      clientName: job.clientName.replace(/[^\w\s-]/g, '') // 特殊文字除去
+    };
+  }
+}
+```
+
+### 3.2 重複チェック機能
+
+```typescript
+class DuplicateChecker {
+  constructor(private dataService: S3DataService) {}
+
+  async filterNewJobs(jobs: JobData[]): Promise<JobData[]> {
+    // 過去48時間のジョブIDを取得
+    const existingJobIds = await this.dataService.getExistingJobIds(48);
+    
+    // 重複除外
+    const newJobs = jobs.filter(job => !existingJobIds.has(job.id));
+    
+    // さらに同一実行内での重複もチェック
+    const uniqueJobs = this.removeDuplicatesInBatch(newJobs);
+    
+    return uniqueJobs;
+  }
+
+  private removeDuplicatesInBatch(jobs: JobData[]): JobData[] {
+    const seen = new Set<string>();
+    return jobs.filter(job => {
+      if (seen.has(job.id)) {
+        return false;
+      }
+      seen.add(job.id);
+      return true;
+    });
+  }
+}
+```
+
+## 4. データ移行・初期化
+
+### 4.1 初期データ設定
+
+```typescript
+class DataInitializer {
+  constructor(private dataService: S3DataService) {}
+
+  async initializeSystem(): Promise<void> {
+    // システム設定の初期化
+    await this.initializeSystemConfig();
+    
+    // 検索条件の初期化
+    await this.initializeSearchConditions();
+    
+    // S3バケットの設定確認
+    await this.setupS3Bucket();
+  }
+
+  private async initializeSystemConfig(): Promise<void> {
+    const defaultConfig: SystemConfig = {
+      scraping: {
+        maxJobsPerExecution: 50,
+        preFilterEnabled: true,
+        minBudget: 50000,
+        minClientRating: 4.0,
+        maxDescriptionLength: 500
+      },
+      ai: {
+        enabled: true,
+        model: 'gpt-3.5-turbo',
+        maxJobsForEvaluation: 10,
+        monthlyBudgetLimit: 3.0,
+        maxTokensPerRequest: 200,
+        temperature: 0.3
+      },
+      notification: {
+        enabled: true,
+        scoreThreshold: 7,
+        errorNotificationEnabled: true,
+        dailySummaryEnabled: true
+      },
+      storage: {
+        retentionDays: 7,
+        compressionEnabled: false,
+        backupEnabled: false
+      },
+      performance: {
+        timeoutSeconds: 600,
+        retryCount: 2,
+        concurrentLimit: 1
+      }
+    };
+
+    await this.dataService.saveConfig('config/system-config.json', defaultConfig);
+  }
+
+  private async initializeSearchConditions(): Promise<void> {
+    const defaultConditions: SearchConditions = {
+      version: '1.0.0',
+      lastUpdated: new Date(),
+      conditions: [
+        {
+          id: 'web-development',
+          name: 'Webアプリ開発',
+          enabled: true,
+          keywords: ['React', 'TypeScript', 'Next.js', 'Node.js'],
+          budgetMin: 100000,
+          budgetMax: 1000000,
+          category: 'システム開発',
+          workType: 'fixed',
+          clientRatingMin: 4.0,
+          experienceLevel: 'intermediate',
+          excludeKeywords: ['WordPress', 'PHP'],
+          excludeClients: []
+        },
+        {
+          id: 'ai-development',
+          name: 'AI・機械学習',
+          enabled: true,
+          keywords: ['Python', 'AI', '機械学習', 'データ分析'],
+          budgetMin: 150000,
+          budgetMax: 2000000,
+          category: 'システム開発',
+          workType: 'fixed',
+          clientRatingMin: 4.5,
+          experienceLevel: 'expert',
+          excludeKeywords: ['Excel', '単純作業'],
+          excludeClients: []
+        }
+      ]
+    };
+
+    await this.dataService.saveConfig('config/search-conditions.json', defaultConditions);
+  }
+}
+```
+
+## 5. データバックアップ・復旧
+
+### 5.1 バックアップ方針（コスト重視）
+
+```typescript
+interface BackupStrategy {
+  // 基本方針：コスト削減のため最小限のバックアップ
+  configBackup: {
+    enabled: true;
+    frequency: 'on-change';  // 設定変更時のみ
+    retention: '30 days';
+    location: 'same-bucket/backups/config/';
+  };
+  
+  dataBackup: {
+    enabled: false;          // データは7日で削除されるためバックアップなし
+    reason: 'Cost optimization - data has short lifecycle';
+  };
+  
+  logBackup: {
+    enabled: false;          // ログも7日で削除
+    reason: 'Cost optimization - short retention period';
+  };
+}
+
+class BackupService {
+  constructor(private dataService: S3DataService) {}
+
+  // 設定ファイルのバックアップ（変更時のみ）
+  async backupConfigOnChange(configType: 'system' | 'search-conditions'): Promise<void> {
+    const timestamp = new Date().toISOString().split('T')[0];
+    const sourceKey = `config/${configType === 'system' ? 'system-config.json' : 'search-conditions.json'}`;
+    const backupKey = `backups/config/${configType}-${timestamp}.json`;
+
+    try {
+      const data = await this.dataService.getObject(sourceKey);
+      await this.dataService.putObject(backupKey, data);
+    } catch (error) {
+      console.warn(`Config backup failed: ${error}`);
+    }
+  }
+}
+```
+
+## 6. データ品質管理
+
+### 6.1 データ検証
+
+```typescript
+class DataValidator {
+  // 案件データの検証
+  static validateJobData(job: JobData): { isValid: boolean; errors: string[] } {
+    const errors: string[] = [];
+
+    // 必須フィールドチェック
+    if (!job.id || job.id.trim().length === 0) {
+      errors.push('Job ID is required');
+    }
+    if (!job.title || job.title.trim().length === 0) {
+      errors.push('Job title is required');
+    }
+    if (!job.url || !this.isValidUrl(job.url)) {
+      errors.push('Valid job URL is required');
+    }
+
+    // 数値検証
+    if (job.budget <= 0) {
+      errors.push('Budget must be positive');
+    }
+    if (job.clientRating < 1 || job.clientRating > 5) {
+      errors.push('Client rating must be between 1 and 5');
+    }
+
+    // 配列長制限
+    if (job.skills.length > 5) {
+      errors.push('Skills array cannot exceed 5 items');
+    }
+    if (job.description.length > 500) {
+      errors.push('Description cannot exceed 500 characters');
+    }
+
+    // 日付検証
+    if (!(job.scrapedAt instanceof Date) || isNaN(job.scrapedAt.getTime())) {
+      errors.push('Invalid scraped date');
+    }
+    if (!(job.deadline instanceof Date) || isNaN(job.deadline.getTime())) {
+      errors.push('Invalid deadline');
+    }
+
+    return {
+      isValid: errors.length === 0,
+      errors
+    };
+  }
+
+  // 評価データの検証
+  static validateEvaluation(evaluation: JobEvaluation): { isValid: boolean; errors: string[] } {
+    const errors: string[] = [];
+
+    if (!evaluation.jobId || evaluation.jobId.trim().length === 0) {
+      errors.push('Job ID is required');
+    }
+    if (evaluation.score < 1 || evaluation.score > 10) {
+      errors.push('Score must be between 1 and 10');
+    }
+    if (!evaluation.reason || evaluation.reason.length > 50) {
+      errors.push('Reason must be 1-50 characters');
+    }
+    if (evaluation.tokenUsed < 0) {
+      errors.push('Token usage cannot be negative');
+    }
+    if (evaluation.costEstimate < 0) {
+      errors.push('Cost estimate cannot be negative');
+    }
+
+    return {
+      isValid: errors.length === 0,
+      errors
+    };
+  }
+
+  private static isValidUrl(url: string): boolean {
+    try {
+      new URL(url);
+      return url.includes('crowdworks.jp');
+    } catch {
+      return false;
+    }
+  }
+}
+
+// データクリーニング
+class DataCleaner {
+  static cleanJobData(job: JobData): JobData {
+    return {
+      ...job,
+      title: job.title.trim().slice(0, 200),
+      description: job.description.trim().slice(0, 500),
+      skills: job.skills.slice(0, 5).map(skill => skill.trim()),
+      clientName: job.clientName.trim().replace(/[^\w\s-]/g, ''),
+      budget: Math.max(0, Math.round(job.budget)),
+      clientRating: Math.max(1, Math.min(5, job.clientRating))
+    };
+  }
+
+  static cleanEvaluation(evaluation: JobEvaluation): JobEvaluation {
+    return {
+      ...evaluation,
+      score: Math.max(1, Math.min(10, Math.round(evaluation.score))),
+      reason: evaluation.reason.trim().slice(0, 50),
+      strengths: evaluation.strengths.slice(0, 3),
+      concerns: evaluation.concerns.slice(0, 3),
+      tokenUsed: Math.max(0, evaluation.tokenUsed),
+      costEstimate: Math.max(0, evaluation.costEstimate)
+    };
+  }
+}
+```
+
+**これでS3ベース設計に最適化されたデータ設計書が完成しました！**
+
+コスト制約（月$5以下）を満たしながら、必要な機能を提供できる軽量なデータ構造になっています。
+</file>
+
+<file path="docs/04_api_design.md">
+# API設計書
+
+## 1. API概要
+
+### 1.1 API方針
+
+**基本方針**
+- **コストファースト**: 月$5以下の予算制約を最優先
+- **サーバレス中心**: Lambda関数間の軽量な内部API
+- **外部API最小限**: ChatGPT API（軽量利用）とスクレイピングのみ
+- **RESTful設計**: 標準的なHTTPメソッドとステータスコード
+- **JSON形式**: 全てのリクエスト・レスポンスはJSON
+- **型安全性**: TypeScriptでの完全な型定義
+
+**API構成**
+- **内部API**: Lambda関数間の連携（EventBridge + 直接呼び出し）
+- **管理用API**: 設定確認・手動実行用の最小限API（API Gateway）
+- **外部API**: ChatGPT API、クラウドワークススクレイピング
+- **通知API**: SNS/SESによるエラー・高評価案件通知
+
+### 1.2 認証方式
+
+**内部API認証**
+```typescript
+// Lambda関数間: IAMロールによる認証
+interface LambdaInvocationAuth {
+  type: 'IAM_ROLE';
+  role: 'arn:aws:iam::account:role/CrowdWorksSearcherRole';
+  permissions: ['lambda:InvokeFunction', 's3:GetObject', 's3:PutObject'];
+}
+
+// EventBridge: サービス間認証
+interface EventBridgeAuth {
+  type: 'SERVICE_PRINCIPAL';
+  principal: 'events.amazonaws.com';
+  targetFunction: 'CrowdWorksSearcherMainFunction';
+}
+```
+
+**外部API認証**
+```typescript
+// Parameter Store での安全な管理
+interface ExternalAPIAuth {
+  chatgpt: {
+    type: 'Bearer Token';
+    storage: 'AWS Systems Manager Parameter Store';
+    path: '/crowdworks-searcher/secrets/openai-api-key';
+    encryption: 'SecureString';
+  };
+  
+  crowdworks: {
+    type: 'Session Cookie';
+    storage: 'AWS Systems Manager Parameter Store';
+    credentials: {
+      email: '/crowdworks-searcher/secrets/crowdworks-email';
+      password: '/crowdworks-searcher/secrets/crowdworks-password';
+    };
+    encryption: 'SecureString';
+  };
+}
+```
+
+### 1.3 エラーレスポンス共通仕様
+
+```typescript
+// 標準エラーレスポンス
+interface APIErrorResponse {
+  error: {
+    code: string;           // エラーコード
+    message: string;        // エラーメッセージ
+    timestamp: string;      // エラー発生時刻（ISO形式）
+    requestId: string;      // リクエストID（トレース用）
+    retryable: boolean;     // リトライ可能かどうか
+    details?: Record<string, any>; // 詳細情報（オプション）
+  };
+}
+
+// エラーコード定義
+enum APIErrorCode {
+  // クライアントエラー (4xx)
+  INVALID_REQUEST = 'INVALID_REQUEST',
+  AUTHENTICATION_FAILED = 'AUTHENTICATION_FAILED',
+  AUTHORIZATION_FAILED = 'AUTHORIZATION_FAILED',
+  RESOURCE_NOT_FOUND = 'RESOURCE_NOT_FOUND',
+  RATE_LIMIT_EXCEEDED = 'RATE_LIMIT_EXCEEDED',
+  
+  // サーバーエラー (5xx)
+  INTERNAL_SERVER_ERROR = 'INTERNAL_SERVER_ERROR',
+  SERVICE_UNAVAILABLE = 'SERVICE_UNAVAILABLE',
+  EXTERNAL_API_ERROR = 'EXTERNAL_API_ERROR',
+  TIMEOUT_ERROR = 'TIMEOUT_ERROR',
+  
+  // ビジネスロジックエラー
+  BUDGET_EXCEEDED = 'BUDGET_EXCEEDED',
+  SCRAPING_FAILED = 'SCRAPING_FAILED',
+  AI_EVALUATION_FAILED = 'AI_EVALUATION_FAILED',
+  S3_OPERATION_FAILED = 'S3_OPERATION_FAILED'
+}
+```
+
+## 2. 内部API設計
+
+### 2.1 メイン処理API（Lambda関数）
+
+#### 2.1.1 スケジュール実行
+
+```typescript
+// EventBridge → Lambda実行
+interface ScheduledExecutionEvent {
+  source: 'aws.events';
+  'detail-type': 'Scheduled Event';
+  detail: {};
+  time: string; // ISO形式
+}
+
+interface ScheduledExecutionResponse {
+  status: 'success' | 'error' | 'partial';
+  executionId: string;
+  timestamp: string;
+  results: {
+    jobsScraped: number;
+    newJobs: number;
+    aiEvaluated: number;
+    highScoreJobs: number;
+    duration: number;
+    costEstimate: number;
+  };
+  error?: {
+    type: string;
+    message: string;
+  };
+}
+
+// Lambda Handler実装
+export const scheduledExecutionHandler = async (
+  event: ScheduledExecutionEvent
+): Promise<ScheduledExecutionResponse> => {
+  const executionId = Date.now().toString();
+  const startTime = Date.now();
+  
+  try {
+    // メイン処理フローの実行
+    const result = await executeMainFlow(executionId);
+    
+    return {
+      status: 'success',
+      executionId,
+      timestamp: new Date().toISOString(),
+      results: {
+        ...result,
+        duration: Date.now() - startTime
+      }
+    };
+  } catch (error) {
+    return {
+      status: 'error',
+      executionId,
+      timestamp: new Date().toISOString(),
+      results: {
+        jobsScraped: 0,
+        newJobs: 0,
+        aiEvaluated: 0,
+        highScoreJobs: 0,
+        duration: Date.now() - startTime,
+        costEstimate: 0
+      },
+      error: {
+        type: error.constructor.name,
+        message: error.message
+      }
+    };
+  }
+};
+```
+
+#### 2.1.2 手動実行API
+
+```typescript
+// 緊急時の手動実行用（API Gateway経由）
+interface ManualExecutionRequest {
+  trigger: 'manual';
+  options?: {
+    skipCache?: boolean;     // キャッシュスキップ
+    forceAIEvaluation?: boolean; // AI評価強制実行
+    testMode?: boolean;      // テストモード
+  };
+}
+
+interface ManualExecutionResponse {
+  message: string;
+  executionId: string;
+  estimatedCompletion: string; // 完了予定時刻
+  monitorUrl?: string;         // 実行状況確認URL（S3ログ）
+}
+
+// POST /api/execute
+export const manualExecutionHandler = async (
+  event: APIGatewayProxyEvent
+): Promise<APIGatewayProxyResult> => {
+  try {
+    const request: ManualExecutionRequest = JSON.parse(event.body || '{}');
+    
+    // Lambda関数を非同期実行
+    const executionId = await invokeLambdaAsync('main-function', {
+      source: 'manual',
+      options: request.options
+    });
+    
+    const response: ManualExecutionResponse = {
+      message: 'Execution started successfully',
+      executionId,
+      estimatedCompletion: new Date(Date.now() + 60000).toISOString(),
+      monitorUrl: `s3://bucket/logs/execution/${executionId}.json`
+    };
+    
+    return {
+      statusCode: 202,
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(response)
+    };
+  } catch (error) {
+    return createErrorResponse(APIErrorCode.INTERNAL_SERVER_ERROR, error.message);
+  }
+};
+```
+
+### 2.2 設定管理API
+
+#### 2.2.1 システム設定取得
+
+```typescript
+// GET /api/config/system
+interface SystemConfigResponse {
+  config: SystemConfig;
+  lastModified: string;
+  version: string;
+}
+
+export const getSystemConfigHandler = async (): Promise<APIGatewayProxyResult> => {
+  try {
+    const s3DataService = new S3DataService();
+    const config = await s3DataService.getSystemConfig();
+    
+    const response: SystemConfigResponse = {
+      config,
+      lastModified: new Date().toISOString(),
+      version: '1.0.0'
+    };
+    
+    return {
+      statusCode: 200,
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(response)
+    };
+  } catch (error) {
+    return createErrorResponse(APIErrorCode.S3_OPERATION_FAILED, error.message);
+  }
+};
+```
+
+#### 2.2.2 検索条件管理
+
+```typescript
+// GET /api/config/search-conditions
+interface SearchConditionsResponse {
+  conditions: SearchConditions;
+  activeCount: number;
+  lastModified: string;
+}
+
+// PUT /api/config/search-conditions
+interface UpdateSearchConditionsRequest {
+  conditions: SearchConditions;
+  backupCurrent?: boolean; // 現在の設定をバックアップ
+}
+
+export const getSearchConditionsHandler = async (): Promise<APIGatewayProxyResult> => {
+  try {
+    const s3DataService = new S3DataService();
+    const conditions = await s3DataService.getSearchConditions();
+    
+    const activeCount = conditions.conditions.filter(c => c.enabled).length;
+    
+    const response: SearchConditionsResponse = {
+      conditions,
+      activeCount,
+      lastModified: conditions.lastUpdated.toISOString()
+    };
+    
+    return {
+      statusCode: 200,
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(response)
+    };
+  } catch (error) {
+    return createErrorResponse(APIErrorCode.S3_OPERATION_FAILED, error.message);
+  }
+};
+```
+
+### 2.3 データ取得API
+
+#### 2.3.1 案件データ取得
+
+```typescript
+// GET /api/jobs?hours=24&limit=50
+interface JobsQuery {
+  hours?: number;    // 過去何時間のデータ（デフォルト: 24）
+  limit?: number;    // 最大取得件数（デフォルト: 50）
+  minScore?: number; // 最低スコア
+}
+
+interface JobsResponse {
+  jobs: JobData[];
+  totalCount: number;
+  timeRange: {
+    from: string;
+    to: string;
+  };
+  hasMore: boolean;
+}
+
+export const getJobsHandler = async (
+  event: APIGatewayProxyEvent
+): Promise<APIGatewayProxyResult> => {
+  try {
+    const query: JobsQuery = event.queryStringParameters || {};
+    const hours = parseInt(query.hours || '24');
+    const limit = parseInt(query.limit || '50');
+    const minScore = query.minScore ? parseFloat(query.minScore) : undefined;
+    
+    const s3DataService = new S3DataService();
+    let jobs = await s3DataService.getRecentJobs(hours);
+    
+    // スコアフィルタ適用（評価データと結合）
+    if (minScore !== undefined) {
+      const evaluations = await s3DataService.getRecentEvaluations(hours);
+      const highScoreJobIds = new Set(
+        evaluations.filter(e => e.score >= minScore).map(e => e.jobId)
+      );
+      jobs = jobs.filter(job => highScoreJobIds.has(job.id));
+    }
+    
+    // ページング
+    const paginatedJobs = jobs.slice(0, limit);
+    const hasMore = jobs.length > limit;
+    
+    const response: JobsResponse = {
+      jobs: paginatedJobs,
+      totalCount: jobs.length,
+      timeRange: {
+        from: new Date(Date.now() - hours * 60 * 60 * 1000).toISOString(),
+        to: new Date().toISOString()
+      },
+      hasMore
+    };
+    
+    return {
+      statusCode: 200,
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(response)
+    };
+  } catch (error) {
+    return createErrorResponse(APIErrorCode.S3_OPERATION_FAILED, error.message);
+  }
+};
+```
+
+#### 2.3.2 実行状況取得
+
+```typescript
+// GET /api/status
+interface SystemStatusResponse {
+  status: 'healthy' | 'degraded' | 'unhealthy';
+  lastExecution: {
+    id: string;
+    timestamp: string;
+    status: string;
+    duration: number;
+    results: {
+      jobsScraped: number;
+      newJobs: number;
+      highScoreJobs: number;
+    };
+  } | null;
+  nextExecution: string; // 次回実行予定時刻
+  monthlyStats: {
+    executions: number;
+    totalJobs: number;
+    totalCost: number;
+    budgetRemaining: number;
+  };
+  alerts: string[]; // アラート一覧
+}
+
+export const getSystemStatusHandler = async (): Promise<APIGatewayProxyResult> => {
+  try {
+    const s3DataService = new S3DataService();
+    
+    // 最新の実行ログを取得
+    const lastExecution = await s3DataService.getLatestExecutionLog();
+    
+    // 月次統計を計算
+    const monthlyStats = await calculateMonthlyStats();
+    
+    // システム健康状態を判定
+    const status = determineSystemHealth(lastExecution, monthlyStats);
+    
+    // アラートをチェック
+    const alerts = await checkSystemAlerts(monthlyStats);
+    
+    const response: SystemStatusResponse = {
+      status,
+      lastExecution: lastExecution ? {
+        id: lastExecution.executionId,
+        timestamp: lastExecution.timestamp,
+        status: lastExecution.status,
+        duration: lastExecution.duration,
+        results: {
+          jobsScraped: lastExecution.jobsScraped,
+          newJobs: lastExecution.newJobs,
+          highScoreJobs: lastExecution.highScoreJobs
+        }
+      } : null,
+      nextExecution: getNextExecutionTime(),
+      monthlyStats,
+      alerts
+    };
+    
+    return {
+      statusCode: 200,
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(response)
+    };
+  } catch (error) {
+    return createErrorResponse(APIErrorCode.INTERNAL_SERVER_ERROR, error.message);
+  }
+};
+```
+
+## 3. 外部API連携
+
+### 3.1 ChatGPT API連携
+
+```typescript
+// OpenAI API接続設定
+interface ChatGPTAPIConfig {
+  baseURL: 'https://api.openai.com/v1';
+  model: 'gpt-3.5-turbo';
+  maxTokens: 200;
+  temperature: 0.3;
+  timeout: 30000; // 30秒
+}
+
+// API呼び出しサービス
+class ChatGPTAPIService {
+  private client: OpenAI;
+  private rateLimiter: RateLimiter;
+  private costTracker: CostTracker;
+
+  constructor(apiKey: string) {
+    this.client = new OpenAI({ apiKey });
+    this.rateLimiter = new RateLimiter({
+      requestsPerMinute: 50,  // レート制限対応
+      requestsPerHour: 1000
+    });
+    this.costTracker = new CostTracker({
+      monthlyLimit: 3.0 // $3/月制限
+    });
+  }
+
+  async evaluateJob(job: JobData): Promise<JobEvaluation> {
+    // コスト制限チェック
+    if (this.costTracker.isOverLimit()) {
+      throw new Error('Monthly AI budget exceeded');
+    }
+
+    // レート制限チェック
+    await this.rateLimiter.waitIfNeeded();
+
+    try {
+      const prompt = this.createEvaluationPrompt(job);
+      
+      const response = await this.client.chat.completions.create({
+        model: 'gpt-3.5-turbo',
+        messages: [{ role: 'user', content: prompt }],
+        max_tokens: 200,
+        temperature: 0.3,
+        response_format: { type: 'json_object' }
+      });
+
+      const content = response.choices[0]?.message?.content;
+      if (!content) {
+        throw new Error('Empty response from ChatGPT API');
+      }
+
+      const evaluation = this.parseEvaluationResponse(content, job.id);
+      
+      // コスト追跡
+      const cost = this.calculateCost(response.usage);
+      this.costTracker.addUsage(cost);
+      
+      return {
+        ...evaluation,
+        tokenUsed: response.usage?.total_tokens || 0,
+        costEstimate: cost
+      };
+
+    } catch (error) {
+      if (error.status === 429) {
+        throw new APIError(APIErrorCode.RATE_LIMIT_EXCEEDED, 'ChatGPT API rate limit exceeded');
+      }
+      if (error.status >= 500) {
+        throw new APIError(APIErrorCode.EXTERNAL_API_ERROR, 'ChatGPT API server error');
+      }
+      throw new APIError(APIErrorCode.AI_EVALUATION_FAILED, error.message);
+    }
+  }
+
+  private createEvaluationPrompt(job: JobData): string {
+    return `
+案件を評価してJSON形式で回答してください：
+
+案件情報:
+- タイトル: ${job.title}
+- 予算: ${job.budget.toLocaleString()}円
+- 納期: ${job.deadline.toLocaleDateString()}
+- クライアント評価: ${job.clientRating}/5.0
+- 必要スキル: ${job.skills.join(', ')}
+- 概要: ${job.description.slice(0, 200)}
+
+評価基準:
+1. 予算の妥当性（相場との比較）
+2. スキルマッチング度
+3. クライアントの信頼性
+4. 案件説明の明確性
+5. 納期の現実性
+
+回答形式:
+{
+  "score": 1-10の整数,
+  "reason": "評価理由（50文字以内）",
+  "strengths": ["強み1", "強み2"],
+  "concerns": ["懸念1", "懸念2"]
+}
+`;
+  }
+
+  private parseEvaluationResponse(content: string, jobId: string): JobEvaluation {
+    try {
+      const parsed = JSON.parse(content);
+      
+      return {
+        jobId,
+        evaluatedAt: new Date(),
+        score: Math.max(1, Math.min(10, parseInt(parsed.score))),
+        reason: (parsed.reason || '').slice(0, 50),
+        aiModel: 'gpt-3.5-turbo',
+        tokenUsed: 0, // 後で設定
+        costEstimate: 0, // 後で設定
+        strengths: (parsed.strengths || []).slice(0, 3),
+        concerns: (parsed.concerns || []).slice(0, 3)
+      };
+    } catch (error) {
+      // パース失敗時はデフォルト評価
+      return createDefaultEvaluation(jobId);
+    }
+  }
+
+  private calculateCost(usage: any): number {
+    const inputTokens = usage?.prompt_tokens || 0;
+    const outputTokens = usage?.completion_tokens || 0;
+    
+    // GPT-3.5-turbo pricing: $0.0015/1K input, $0.002/1K output
+    return (inputTokens * 0.0015 + outputTokens * 0.002) / 1000;
+  }
+}
+```
+
+### 3.2 クラウドワークススクレイピング
+
+```typescript
+// スクレイピングサービス設定
+interface ScrapingConfig {
+  baseURL: 'https://crowdworks.jp';
+  userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36';
+  timeout: 30000;
+  retryCount: 3;
+  retryDelay: 2000;
+}
+
+// スクレイピングAPI
+class CrowdWorksScrapingService {
+  private browser: Browser | null = null;
+  private page: Page | null = null;
+  private isAuthenticated: boolean = false;
+
+  async initialize(): Promise<void> {
+    try {
+      this.browser = await playwright.chromium.launch({
+        headless: true,
+        args: ['--no-sandbox', '--disable-setuid-sandbox'] // Lambda用設定
+      });
+
+      this.page = await this.browser.newPage({
+        userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+      });
+
+      // タイムアウト設定
+      this.page.setDefaultTimeout(30000);
+      
+    } catch (error) {
+      throw new APIError(APIErrorCode.SCRAPING_FAILED, `Browser initialization failed: ${error.message}`);
+    }
+  }
+
+  async authenticate(credentials: { email: string; password: string }): Promise<void> {
+    if (!this.page) {
+      throw new APIError(APIErrorCode.SCRAPING_FAILED, 'Browser not initialized');
+    }
+
+    try {
+      // ログインページに移動
+      await this.page.goto('https://crowdworks.jp/login');
+      
+      // ログインフォーム入力
+      await this.page.fill('input[name="email"]', credentials.email);
+      await this.page.fill('input[name="password"]', credentials.password);
+      
+      // ログイン実行
+      await this.page.click('button[type="submit"]');
+      
+      // ログイン成功確認
+      await this.page.waitForURL('**/dashboard', { timeout: 10000 });
+      
+      this.isAuthenticated = true;
+      
+    } catch (error) {
+      throw new APIError(APIErrorCode.AUTHENTICATION_FAILED, `CrowdWorks login failed: ${error.message}`);
+    }
+  }
+
+  async searchJobs(conditions: SearchCondition[]): Promise<JobData[]> {
+    if (!this.isAuthenticated || !this.page) {
+      throw new APIError(APIErrorCode.AUTHENTICATION_FAILED, 'Not authenticated');
+    }
+
+    const allJobs: JobData[] = [];
+
+    for (const condition of conditions) {
+      if (!condition.enabled) continue;
+
+      try {
+        const jobs = await this.searchWithCondition(condition);
+        allJobs.push(...jobs);
+        
+        // レート制限対応（検索間隔）
+        await this.delay(2000);
+        
+      } catch (error) {
+        console.warn(`Search failed for condition ${condition.id}:`, error.message);
+        // 個別の検索失敗は全体を止めない
+      }
+    }
+
+    return allJobs;
+  }
+
+  private async searchWithCondition(condition: SearchCondition): Promise<JobData[]> {
+    if (!this.page) throw new Error('Page not available');
+
+    const jobs: JobData[] = [];
+
+    try {
+      // 検索ページに移動
+      await this.page.goto('https://crowdworks.jp/projects/search');
+      
+      // 検索条件設定
+      await this.setSearchFilters(condition);
+      
+      // 検索実行
+      await this.page.click('button[type="submit"]');
+      await this.page.waitForSelector('.project-item', { timeout: 10000 });
+      
+      // 案件リスト取得
+      const jobElements = await this.page.$$('.project-item');
+      
+      for (const element of jobElements.slice(0, 20)) { // 最大20件
+        try {
+          const jobData = await this.extractJobData(element);
+          if (jobData && this.validateJobData(jobData)) {
+            jobs.push(jobData);
+          }
+        } catch (error) {
+          console.warn('Failed to extract job data:', error.message);
+        }
+      }
+      
+    } catch (error) {
+      throw new APIError(APIErrorCode.SCRAPING_FAILED, `Search failed: ${error.message}`);
+    }
+
+    return jobs;
+  }
+
+  async cleanup(): Promise<void> {
+    if (this.page) {
+      await this.page.close();
+      this.page = null;
+    }
+    if (this.browser) {
+      await this.browser.close();
+      this.browser = null;
+    }
+    this.isAuthenticated = false;
+  }
+}
+```
+
+## 4. 通知API設計
+
+### 4.1 SNS通知サービス
+
+```typescript
+// SNS通知設定
+interface NotificationConfig {
+  errorTopic: string;          // エラー通知用SNSトピック
+  highScoreTopic: string;      // 高評価案件通知用
+  email: string;               // 通知先メールアドレス
+  enabled: boolean;            // 通知有効フラグ
+}
+
+// 通知サービス
+class NotificationService {
+  private sns: SNSClient;
+  private ses: SESClient;
+  private config: NotificationConfig;
+
+  constructor(config: NotificationConfig) {
+    this.sns = new SNSClient({});
+    this.ses = new SESClient({});
+    this.config = config;
+  }
+
+  // エラー通知
+  async sendErrorAlert(error: Error, executionId: string): Promise<void> {
+    if (!this.config.enabled) return;
+
+    const message = {
+      timestamp: new Date().toISOString(),
+      executionId,
+      errorType: error.constructor.name,
+      errorMessage: error.message,
+      severity: this.determineSeverity(error)
+    };
+
+    try {
+      await this.sns.publish({
+        TopicArn: this.config.errorTopic,
+        Subject: `[CrowdWorks Searcher] ${message.severity} Error`,
+        Message: JSON.stringify(message, null, 2)
+      });
+    } catch (snsError) {
+      console.error('Failed to send error notification:', snsError);
+    }
+  }
+
+  // 高評価案件通知
+  async sendHighScoreAlert(jobs: JobEvaluation[]): Promise<void> {
+    if (!this.config.enabled || jobs.length === 0) return;
+
+    const message = {
+      timestamp: new Date().toISOString(),
+      jobCount: jobs.length,
+      jobs: jobs.map(job => ({
+        jobId: job.jobId,
+        score: job.score,
+        reason: job.reason
+      }))
+    };
+
+    try {
+      await this.sns.publish({
+        TopicArn: this.config.highScoreTopic,
+        Subject: `[CrowdWorks Searcher] ${jobs.length} High Score Job(s) Found`,
+        Message: JSON.stringify(message, null, 2)
+      });
+    } catch (snsError) {
+      console.error('Failed to send high score notification:', snsError);
+    }
+  }
+}
+```
+
+## 5. エラーハンドリング共通実装
+
+```typescript
+// エラー処理ヘルパー
+export const createErrorResponse = (
+  errorCode: APIErrorCode,
+  message: string,
+  details?: Record<string, any>
+): APIGatewayProxyResult => {
+  const error: APIErrorResponse = {
+    error: {
+      code: errorCode,
+      message,
+      timestamp: new Date().toISOString(),
+      requestId: uuidv4(),
+      retryable: isRetryableError(errorCode),
+      details
+    }
+  };
+
+  return {
+    statusCode: ERROR_STATUS_MAP[errorCode] || 500,
+    headers: {
+      'Content-Type': 'application/json',
+      'X-Request-ID': error.error.requestId
+    },
+    body: JSON.stringify(error)
+  };
+};
+
+// カスタムエラークラス
+export class APIError extends Error {
+  constructor(
+    public code: APIErrorCode,
+    message: string,
+    public retryable: boolean = false,
+    public details?: Record<string, any>
+  ) {
+    super(message);
+    this.name = 'APIError';
+  }
+}
+
+// リトライ可能エラーの判定
+const isRetryableError = (errorCode: APIErrorCode): boolean => {
+  return [
+    APIErrorCode.SERVICE_UNAVAILABLE,
+    APIErrorCode.TIMEOUT_ERROR,
+    APIErrorCode.EXTERNAL_API_ERROR,
+    APIErrorCode.RATE_LIMIT_EXCEEDED
+  ].includes(errorCode);
+};
+```
+</file>
+
+<file path="docs/05_implementation_plan.md">
+# 実装計画書
+
+## 1. 開発フェーズ
+
+### Phase 1: AWS基盤構築・環境セットアップ（1-2週間）
+
+**目標**: AWS サーバレス基盤の構築とローカル開発環境の整備
+
+**成果物**
+- AWS CDK による Infrastructure as Code
+- S3バケット設定とライフサイクルポリシー
+- Lambda関数の基本構造
+- EventBridge スケジュール設定
+- Parameter Store シークレット管理
+- ローカル開発・テスト環境
+
+**主要タスク**
+```typescript
+// CDK Stack 構成
+interface CrowdWorksSearcherStackProps {
+  s3Bucket: 'crowdworks-searcher-bucket';
+  lambdaFunction: 'crowdworks-searcher-main';
+  eventBridgeRule: '15分間隔実行';
+  parameterStore: 'シークレット管理';
+  iamRoles: '最小権限設定';
+}
+```
+
+**完了基準**
+- [ ] CDK deploy が成功
+- [ ] S3バケットが作成され、ライフサイクルポリシーが設定済み
+- [ ] Lambda関数が EventBridge から呼び出し可能
+- [ ] Parameter Store でシークレット管理が機能
+- [ ] ローカルでの開発環境が構築済み
+- [ ] コスト監視アラートが設定済み
+
+### Phase 2: スクレイピング機能実装（2-3週間）
+
+**目標**: クラウドワークスからの案件データ自動取得機能
+
+**成果物**
+- Playwright によるブラウザ自動化
+- 認証・ログイン機能
+- 案件データ抽出・正規化機能
+- エラーハンドリング・リトライ機能
+- S3への案件データ保存機能
+
+**主要タスク**
+```typescript
+// スクレイピングサービス実装
+class CrowdWorksScrapingService {
+  async initialize(): Promise<void>;
+  async authenticate(credentials: LoginCredentials): Promise<void>;
+  async searchJobs(conditions: SearchCondition[]): Promise<JobData[]>;
+  async extractJobData(element: ElementHandle): Promise<JobData>;
+  async cleanup(): Promise<void>;
+}
+
+// データ保存サービス実装
+class S3DataService {
+  async saveJobs(jobs: JobData[], timestamp: string): Promise<void>;
+  async getRecentJobs(hours: number): Promise<JobData[]>;
+  async getExistingJobIds(hours: number): Promise<Set<string>>;
+}
+```
+
+**完了基準**
+- [ ] クラウドワークスへの自動ログインが成功
+- [ ] 検索条件に基づく案件データ取得が動作
+- [ ] 取得データが正しくS3に保存される
+- [ ] 重複チェック機能が正常動作
+- [ ] エラー時の適切なリトライ処理
+- [ ] Lambda実行時間が10分以内
+
+### Phase 3: AI評価機能実装（2週間）
+
+**目標**: ChatGPT API による案件評価とコスト制御
+
+**成果物**
+- ChatGPT API 連携機能
+- 評価プロンプト最適化
+- レート制限・コスト制限機能
+- 評価結果の S3 保存機能
+- デフォルト評価フォールバック機能
+
+**主要タスク**
+```typescript
+// AI評価サービス実装
+class ChatGPTAPIService {
+  private rateLimiter: RateLimiter;
+  private costTracker: CostTracker;
+  
+  async evaluateJob(job: JobData): Promise<JobEvaluation>;
+  async evaluateJobsBatch(jobs: JobData[]): Promise<JobEvaluation[]>;
+  private createEvaluationPrompt(job: JobData): string;
+  private parseEvaluationResponse(content: string): JobEvaluation;
+}
+
+// コスト制御実装
+class CostTracker {
+  private monthlyUsage: number = 0;
+  private readonly monthlyLimit: number = 3.0; // $3制限
+  
+  addUsage(cost: number): void;
+  isOverLimit(): boolean;
+  getRemainingBudget(): number;
+}
+```
+
+**完了基準**
+- [ ] ChatGPT API 連携が正常動作
+- [ ] 月$3のコスト制限が機能
+- [ ] レート制限対応が実装済み
+- [ ] 評価結果がS3に正しく保存
+- [ ] API障害時のフォールバック動作確認
+- [ ] 評価精度の初期検証完了
+
+### Phase 4: 通知・監視機能実装（1-2週間）
+
+**目標**: エラー通知と高評価案件通知の実装
+
+**成果物**
+- SNS/SES による通知機能
+- エラー監視とアラート機能
+- 高評価案件の即座通知
+- 日次サマリーレポート機能
+- システム状況監視API
+
+**主要タスク**
+```typescript
+// 通知サービス実装
+class NotificationService {
+  async sendErrorAlert(error: Error, executionId: string): Promise<void>;
+  async sendHighScoreAlert(jobs: JobEvaluation[]): Promise<void>;
+  async sendDailySummary(summary: DailySummary): Promise<void>;
+}
+
+// 監視サービス実装
+class MonitoringService {
+  async checkSystemHealth(): Promise<SystemStatus>;
+  async calculateMonthlyStats(): Promise<MonthlyStats>;
+  async generateDailySummary(): Promise<DailySummary>;
+}
+```
+
+**完了基準**
+- [ ] エラー発生時のSNS通知が動作
+- [ ] 高評価案件の即座通知が機能
+- [ ] 日次サマリーメール送信が動作
+- [ ] システム状況監視APIが利用可能
+- [ ] 通知内容の適切性確認
+
+### Phase 5: 運用・改善・最適化（継続的）
+
+**目標**: 安定運用とコスト最適化、機能改善
+
+**成果物**
+- 運用手順書・トラブルシューティングガイド
+- パフォーマンス最適化
+- コスト監視・最適化
+- セキュリティ強化
+- 機能拡張対応
+
+**主要タスク**
+- コスト分析とさらなる最適化
+- 実行時間短縮とパフォーマンス改善
+- エラー率削減と安定性向上
+- セキュリティ監査と改善
+- ユーザビリティ向上
+
+**完了基準**
+- [ ] 月$5以下のコスト目標達成
+- [ ] 稼働率95%以上の安定運用
+- [ ] 平均実行時間1分以内
+- [ ] エラー率5%以下
+- [ ] セキュリティベストプラクティス適用
+
+## 2. マイルストーン
+
+### 2.1 短期目標（1-2週間）
+
+**Week 1: AWS基盤構築**
+- Day 1-2: プロジェクト初期化、CDK セットアップ
+- Day 3-4: S3バケット、Lambda、EventBridge 構築
+- Day 5-7: Parameter Store、IAM設定、初期テスト
+
+**Week 2: スクレイピング基盤**
+- Day 8-10: Playwright セットアップ、Lambda Layer作成
+- Day 11-12: 認証機能実装、基本スクレイピング
+- Day 13-14: データ抽出・正規化、S3保存機能
+
+**成果物チェックリスト**
+```typescript
+interface Week2Deliverables {
+  infrastructure: {
+    cdkDeployment: '✅ 成功';
+    s3Bucket: '✅ 作成・設定完了';
+    lambdaFunction: '✅ 基本実装';
+    eventBridge: '✅ スケジュール設定';
+  };
+  
+  scraping: {
+    authentication: '✅ ログイン機能';
+    dataExtraction: '✅ 基本抽出';
+    s3Integration: '✅ データ保存';
+    errorHandling: '✅ 基本エラー処理';
+  };
+}
+```
+
+### 2.2 中期目標（1ヶ月）
+
+**Week 3-4: AI機能・通知機能完成**
+- Week 3: ChatGPT API連携、評価機能実装
+- Week 4: 通知機能、監視機能実装
+
+**Month 1 完了目標**
+- 全機能の基本実装完了
+- 15分間隔での自動実行が安定動作
+- コスト$5以下での運用確認
+- 基本的なエラーハンドリングが機能
+
+**品質基準**
+```typescript
+interface Month1QualityGates {
+  functionality: {
+    scraping: '90%以上の成功率';
+    aiEvaluation: '80%以上の成功率';
+    notification: '95%以上の送信成功率';
+  };
+  
+  performance: {
+    executionTime: '平均2分以内';
+    errorRate: '10%以下';
+    costPerMonth: '$5以下';
+  };
+  
+  reliability: {
+    uptime: '90%以上';
+    dataIntegrity: '99%以上';
+  };
+}
+```
+
+### 2.3 長期目標（3ヶ月）
+
+**Month 2: 安定化・最適化**
+- パフォーマンス最適化（実行時間1分以内）
+- エラー率5%以下達成
+- コスト$4以下への削減
+- セキュリティ強化
+
+**Month 3: 運用改善・機能拡張**
+- 高度な監視・アラート機能
+- 評価精度向上
+- レポート機能強化
+- 将来拡張の準備
+
+**3ヶ月後の目標状態**
+```typescript
+interface ThreeMonthTarget {
+  operational: {
+    uptime: '95%以上';
+    avgExecutionTime: '60秒以内';
+    errorRate: '5%以下';
+    monthlyCost: '$4以下';
+  };
+  
+  quality: {
+    dataAccuracy: '95%以上';
+    aiEvaluationPrecision: '85%以上';
+    notificationReliability: '99%以上';
+  };
+  
+  business: {
+    jobDiscoveryRate: '高評価案件を80%キャッチ';
+    falsePositiveRate: '20%以下';
+    userSatisfaction: '運用負荷ほぼゼロ';
+  };
+}
+```
+
+## 3. タスク分解
+
+### 3.1 環境構築タスク
+
+**AWS CDK セットアップ**
+```typescript
+// CDK プロジェクト初期化
+interface CDKSetupTasks {
+  initialization: [
+    'npm install -g aws-cdk',
+    'cdk init app --language typescript',
+    'npm install @aws-cdk/aws-*の必要パッケージ',
+    'cdk bootstrap（初回のみ）'
+  ];
+  
+  stackImplementation: [
+    'S3BucketStack実装',
+    'LambdaStack実装', 
+    'EventBridgeStack実装',
+    'IAMRoleStack実装',
+    'ParameterStoreStack実装'
+  ];
+  
+  validation: [
+    'cdk synth でテンプレート確認',
+    'cdk deploy --dry-run',
+    'cdk deploy で実環境デプロイ',
+    'AWS Console で設定確認'
+  ];
+}
+```
+
+**ローカル開発環境**
+```typescript
+interface LocalDevEnvironment {
+  tools: [
+    'Node.js 18.x',
+    'TypeScript 5.x',
+    'AWS CLI v2',
+    'AWS CDK CLI',
+    'Docker（Playwright用）'
+  ];
+  
+  configuration: [
+    'AWS認証情報設定',
+    'VS Code拡張機能インストール',
+    'ESLint/Prettier設定',
+    'Jest テスト環境',
+    'TypeScript strict設定'
+  ];
+  
+  validation: [
+    'aws sts get-caller-identity',
+    'cdk --version',
+    'npm test',
+    'TypeScript型チェック'
+  ];
+}
+```
+
+### 3.2 開発タスク
+
+**Phase 1 開発タスク（AWS基盤）**
+```typescript
+interface Phase1DevelopmentTasks {
+  infrastructure: {
+    priority: 'High';
+    tasks: [
+      {
+        name: 'S3バケット作成';
+        description: 'データ保存用S3バケット、ライフサイクルポリシー設定';
+        estimatedHours: 4;
+        dependencies: [];
+      },
+      {
+        name: 'Lambda関数基盤';
+        description: 'メイン実行用Lambda関数、Layer設定';
+        estimatedHours: 8;
+        dependencies: ['S3バケット作成'];
+      },
+      {
+        name: 'EventBridge設定';
+        description: '15分間隔スケジュール設定';
+        estimatedHours: 2;
+        dependencies: ['Lambda関数基盤'];
+      },
+      {
+        name: 'Parameter Store';
+        description: 'シークレット管理、暗号化設定';
+        estimatedHours: 4;
+        dependencies: [];
+      }
+    ];
+  };
+}
+```
+
+**Phase 2 開発タスク（スクレイピング）**
+```typescript
+interface Phase2DevelopmentTasks {
+  scraping: {
+    priority: 'High';
+    tasks: [
+      {
+        name: 'Playwright Lambda Layer';
+        description: 'ブラウザバイナリ含むLayer作成';
+        estimatedHours: 12;
+        technicalRisk: 'High - Lambda容量制限';
+      },
+      {
+        name: '認証機能';
+        description: 'クラウドワークスログイン自動化';
+        estimatedHours: 8;
+        technicalRisk: 'Medium - サイト仕様変更リスク';
+      },
+      {
+        name: 'データ抽出';
+        description: '案件情報のスクレイピング・正規化';
+        estimatedHours: 16;
+        technicalRisk: 'High - HTML構造依存';
+      },
+      {
+        name: '重複チェック';
+        description: '既存案件との重複排除機能';
+        estimatedHours: 6;
+        technicalRisk: 'Low';
+      }
+    ];
+  };
+}
+```
+
+**Phase 3 開発タスク（AI評価）**
+```typescript
+interface Phase3DevelopmentTasks {
+  aiEvaluation: {
+    priority: 'Medium';
+    tasks: [
+      {
+        name: 'ChatGPT API連携';
+        description: 'OpenAI SDK統合、API呼び出し';
+        estimatedHours: 8;
+        technicalRisk: 'Medium - API変更リスク';
+      },
+      {
+        name: 'プロンプト最適化';
+        description: '評価精度向上のためのプロンプト調整';
+        estimatedHours: 12;
+        technicalRisk: 'Medium - 評価精度確保';
+      },
+      {
+        name: 'コスト制御';
+        description: 'レート制限、月額予算制限実装';
+        estimatedHours: 6;
+        technicalRisk: 'Low';
+      },
+      {
+        name: 'フォールバック';
+        description: 'API障害時のデフォルト評価';
+        estimatedHours: 4;
+        technicalRisk: 'Low';
+      }
+    ];
+  };
+}
+```
+
+### 3.3 テストタスク
+
+**単体テスト**
+```typescript
+interface UnitTestStrategy {
+  coverage: {
+    target: '80%以上';
+    priority: 'ビジネスロジック100%、インフラ層60%';
+  };
+  
+  testSuites: [
+    {
+      name: 'S3DataService';
+      tests: ['データ保存', 'データ取得', '重複チェック'];
+      mockStrategy: 'AWS SDK v3 mock';
+    },
+    {
+      name: 'ChatGPTAPIService';
+      tests: ['API呼び出し', 'レスポンス解析', 'エラーハンドリング'];
+      mockStrategy: 'OpenAI API mock';
+    },
+    {
+      name: 'CrowdWorksScrapingService';
+      tests: ['認証', 'データ抽出', 'エラー処理'];
+      mockStrategy: 'Playwright Page mock';
+    }
+  ];
+  
+  tools: ['Jest', '@types/jest', 'aws-sdk-client-mock'];
+}
+```
+
+**結合テスト**
+```typescript
+interface IntegrationTestStrategy {
+  scope: 'AWS サービス間連携、外部API連携';
+  
+  testSuites: [
+    {
+      name: 'Lambda-S3連携';
+      description: 'データ保存・取得の一連の流れ';
+      environment: 'テスト用AWSアカウント';
+    },
+    {
+      name: 'EventBridge-Lambda連携';
+      description: 'スケジュール実行の動作確認';
+      environment: 'テスト用AWSアカウント';
+    },
+    {
+      name: 'ChatGPT API連携';
+      description: '実際のAPI呼び出しとレスポンス処理';
+      environment: 'テスト用APIキー';
+    }
+  ];
+}
+```
+
+**E2Eテスト**
+```typescript
+interface E2ETestStrategy {
+  scope: 'システム全体の動作確認';
+  
+  scenarios: [
+    {
+      name: '正常フロー';
+      steps: [
+        'EventBridge トリガー',
+        'スクレイピング実行',
+        'AI評価実行',
+        'S3データ保存',
+        '通知送信'
+      ];
+      expectedResult: '全て成功、適切なデータ保存';
+    },
+    {
+      name: 'エラー回復フロー';
+      steps: [
+        'スクレイピング失敗',
+        'リトライ実行',
+        'エラー通知送信'
+      ];
+      expectedResult: 'エラー通知が送信される';
+    }
+  ];
+}
+```
+
+### 3.4 デプロイタスク
+
+**デプロイ戦略**
+```typescript
+interface DeploymentStrategy {
+  environments: {
+    development: {
+      description: 'ローカル開発・単体テスト';
+      deployment: 'npm run dev';
+      dataSource: 'モックデータ';
+    };
+    
+    staging: {
+      description: '結合テスト・E2Eテスト';
+      deployment: 'cdk deploy --profile staging';
+      dataSource: 'テスト用クラウドワークス（サンドボックス）';
+    };
+    
+    production: {
+      description: '本番運用';
+      deployment: 'cdk deploy --profile production';
+      dataSource: '実際のクラウドワークス';
+    };
+  };
+  
+  process: [
+    'ローカルでの全テスト実行',
+    'staging環境へのデプロイ',
+    'staging環境での結合テスト',
+    'production環境へのデプロイ',
+    'production環境での動作確認',
+    '監視アラート設定確認'
+  ];
+}
+```
+
+**デプロイ自動化**
+```typescript
+interface DeploymentAutomation {
+  cicd: {
+    tool: 'GitHub Actions（無料枠）';
+    triggers: ['main branch push', 'release tag'];
+  };
+  
+  pipeline: [
+    {
+      stage: 'Test';
+      actions: ['npm test', 'lint check', 'type check'];
+    },
+    {
+      stage: 'Build';
+      actions: ['npm run build', 'cdk synth'];
+    },
+    {
+      stage: 'Deploy to Staging';
+      actions: ['cdk deploy staging'];
+      condition: 'branch == main';
+    },
+    {
+      stage: 'E2E Test';
+      actions: ['run e2e tests on staging'];
+    },
+    {
+      stage: 'Deploy to Production';
+      actions: ['cdk deploy production'];
+      condition: 'tag release';
+      approval: 'manual';
+    }
+  ];
+}
+```
+
+## 4. リスク管理
+
+### 4.1 技術的リスク
+
+**高リスク項目**
+```typescript
+interface HighTechnicalRisks {
+  playwrightLambda: {
+    risk: 'Playwright on Lambda の容量・実行時間制限';
+    probability: 'High';
+    impact: 'High';
+    mitigation: [
+      'Lambda Layer最適化（不要ファイル削除）',
+      'ブラウザオプション調整（軽量化）',
+      'タイムアウト処理の充実',
+      'フォールバック機能実装'
+    ];
+    contingency: 'Fargate への移行検討';
+  };
+  
+  crowdworksChanges: {
+    risk: 'クラウドワークスサイト仕様変更';
+    probability: 'Medium';
+    impact: 'High';
+    mitigation: [
+      'セレクタの柔軟な指定',
+      '複数の抽出方法用意',
+      '定期的な動作確認',
+      'エラー検知・アラート機能'
+    ];
+    contingency: '手動バックアップ手順の準備';
+  };
+  
+  chatgptApiChanges: {
+    risk: 'ChatGPT API仕様変更・価格変更';
+    probability: 'Medium';
+    impact: 'Medium';
+    mitigation: [
+      'API バージョン固定',
+      'コスト監視アラート',
+      'フォールバック評価ロジック',
+      '他LLM APIの調査'
+    ];
+    contingency: 'ルールベース評価への切り替え';
+  };
+}
+```
+
+**中リスク項目**
+```typescript
+interface MediumTechnicalRisks {
+  awsCostOverrun: {
+    risk: 'AWS利用料金の予想外の増加';
+    probability: 'Medium';
+    impact: 'Medium';
+    mitigation: [
+      'AWS Cost Explorer での監視',
+      'Billing Alerts 設定',
+      'リソース利用量の定期確認',
+      'コスト最適化の継続的実施'
+    ];
+  };
+  
+  performanceDegradation: {
+    risk: 'Lambda実行時間の増加';
+    probability: 'Medium';
+    impact: 'Medium';
+    mitigation: [
+      'パフォーマンス監視',
+      'コード最適化',
+      'プロファイリング実施',
+      'アーキテクチャ見直し'
+    ];
+  };
+}
+```
+
+### 4.2 スケジュールリスク
+
+**開発遅延リスク**
+```typescript
+interface ScheduleRisks {
+  playwrightIntegration: {
+    plannedDuration: '1週間';
+    riskFactor: '技術的困難により2-3週間に延長の可能性';
+    mitigation: [
+      '事前調査・プロトタイプ作成',
+      '代替案（Puppeteer等）の準備',
+      'バッファ期間の確保'
+    ];
+  };
+  
+  aiPromptOptimization: {
+    plannedDuration: '1週間';
+    riskFactor: '評価精度確保で反復が必要';
+    mitigation: [
+      '評価基準の明確化',
+      'テストデータセット準備',
+      '段階的改善アプローチ'
+    ];
+  };
+  
+  awsLearningCurve: {
+    plannedDuration: '継続的';
+    riskFactor: 'CDK・サーバレス技術の習得時間';
+    mitigation: [
+      '事前学習期間の確保',
+      'AWSドキュメント・チュートリアル活用',
+      'コミュニティからの情報収集'
+    ];
+  };
+}
+```
+
+### 4.3 対策・回避策
+
+**リスク軽減戦略**
+```typescript
+interface RiskMitigationStrategy {
+  proactiveApproach: {
+    prototypeFirst: '本格実装前のPoC実施';
+    incrementalDevelopment: '機能を段階的に実装・検証';
+    continuousMonitoring: '継続的な監視・アラート';
+    documentationFirst: '設計書の事前作成';
+  };
+  
+  contingencyPlans: {
+    technicalAlternatives: {
+      playwright: 'Puppeteer、Selenium';
+      chatgpt: 'Claude、Gemini、ルールベース';
+      lambda: 'Fargate、EC2';
+    };
+    
+    fallbackMechanisms: {
+      scrapingFailure: 'エラー通知 + 手動実行手順';
+      aiFailure: 'デフォルトスコア + 基本フィルタリング';
+      notificationFailure: 'ログ出力 + CloudWatch監視';
+    };
+  };
+  
+  qualityAssurance: {
+    codeReview: '全PRのレビュー必須';
+    testing: '各機能80%以上のテストカバレッジ';
+    monitoring: 'リアルタイム監視・アラート';
+    backup: '設定ファイルのバージョン管理';
+  };
+}
+```
+
+## 5. 品質管理
+
+### 5.1 コードレビュー方針
+
+**レビュー基準**
+```typescript
+interface CodeReviewStandards {
+  mandatory: {
+    typeDefinitions: '全関数・クラスの型定義必須';
+    errorHandling: '適切なエラーハンドリング';
+    testing: '新機能の単体テスト必須';
+    documentation: 'TSDocコメント';
+    security: 'シークレット情報のハードコーディング禁止';
+  };
+  
+  performance: {
+    lambdaOptimization: 'メモリ・実行時間の最適化';
+    s3Operations: '最小限のAPI呼び出し';
+    costConsciousness: 'コストインパクトの考慮';
+  };
+  
+  maintainability: {
+    codeStructure: '適切な関数・クラス分割';
+    naming: '意味的な変数・関数名';
+    constants: 'マジックナンバーの排除';
+    comments: '複雑なロジックの説明';
+  };
+}
+```
+
+**レビュープロセス**
+```typescript
+interface ReviewProcess {
+  steps: [
+    '開発者による自己レビュー',
+    'ESLint・Prettier による自動チェック',
+    'TypeScript型チェック',
+    '単体テスト実行',
+    'Pull Request 作成',
+    'コードレビュー実施',
+    '修正・再レビュー（必要に応じて）',
+    'マージ・デプロイ'
+  ];
+  
+  criteria: {
+    functionalCorrectness: '期待される動作の確認';
+    codeQuality: 'Clean Code 原則の遵守';
+    testCoverage: '80%以上のカバレッジ';
+    documentation: '必要な説明の追加';
+    security: 'セキュリティベストプラクティス';
+  };
+}
+```
+
+### 5.2 テスト方針
+
+**テスト戦略**
+```typescript
+interface TestStrategy {
+  pyramid: {
+    unit: {
+      coverage: '80%以上';
+      focus: 'ビジネスロジック、ユーティリティ関数';
+      tools: ['Jest', '@types/jest'];
+      mocking: 'AWS SDK、外部API';
+    };
+    
+    integration: {
+      coverage: '主要フロー100%';
+      focus: 'AWS サービス間連携';
+      environment: 'テスト用AWSアカウント';
+      tools: ['Jest', 'aws-sdk-client-mock'];
+    };
+    
+    e2e: {
+      coverage: '重要シナリオ100%';
+      focus: 'エンドツーエンドの動作確認';
+      environment: 'staging環境';
+      tools: ['Jest', '実際のAWS環境'];
+    };
+  };
+  
+  testTypes: {
+    functional: '機能要件の確認';
+    performance: '実行時間・メモリ使用量';
+    reliability: 'エラー処理・回復機能';
+    security: '認証・認可・データ保護';
+    cost: 'AWS利用料金の想定内確認';
+  };
+}
+```
+
+**テスト自動化**
+```typescript
+interface TestAutomation {
+  continuous: {
+    trigger: ['コミット時', 'PR作成時', 'マージ時'];
+    pipeline: [
+      'Lint チェック',
+      '型チェック',
+      '単体テスト',
+      'カバレッジ確認',
+      '結合テスト（staging）'
+    ];
+  };
+  
+  scheduled: {
+    e2eTests: '日次実行（本番環境監視）';
+    performanceTests: '週次実行';
+    securityTests: '月次実行';
+  };
+  
+  reporting: {
+    coverage: 'Codecov 連携';
+    results: 'GitHub Actions ログ';
+    alerts: 'Slack 通知（失敗時）';
+  };
+}
+```
+
+### 5.3 品質指標
+
+**品質メトリクス**
+```typescript
+interface QualityMetrics {
+  functional: {
+    successRate: {
+      target: '95%以上';
+      measurement: '15分間隔実行の成功率';
+    };
+    
+    dataAccuracy: {
+      target: '95%以上';
+      measurement: '取得データの正確性';
+    };
+    
+    evaluationPrecision: {
+      target: '80%以上';
+      measurement: 'AI評価と手動評価の一致率';
+    };
+  };
+  
+  performance: {
+    executionTime: {
+      target: '平均60秒以内';
+      measurement: 'Lambda実行時間';
+    };
+    
+    errorRate: {
+      target: '5%以下';
+      measurement: '実行失敗率';
+    };
+    
+    responseTime: {
+      target: 'API呼び出し3秒以内';
+      measurement: 'ChatGPT API応答時間';
+    };
+  };
+  
+  reliability: {
+    uptime: {
+      target: '95%以上';
+      measurement: 'システム稼働率';
+    };
+    
+    recovery: {
+      target: '15分以内';
+      measurement: 'エラーからの自動回復時間';
+    };
+  };
+  
+  cost: {
+    monthlyBudget: {
+      target: '$5以下';
+      measurement: 'AWS利用料金合計';
+    };
+    
+    costPerExecution: {
+      target: '$0.05以下';
+      measurement: '1回実行あたりのコスト';
+    };
+  };
+}
+```
+
+**品質改善プロセス**
+```typescript
+interface QualityImprovementProcess {
+  monitoring: {
+    realtime: 'CloudWatch メトリクス監視';
+    daily: '日次サマリーレポート確認';
+    weekly: '週次品質レビュー';
+    monthly: '月次コスト・パフォーマンス分析';
+  };
+  
+  improvement: {
+    threshold: '目標値を下回った場合の改善アクション';
+    analysis: '原因分析・根本対策の実施';
+    optimization: '継続的な最適化';
+    documentation: '改善内容の記録・共有';
+  };
+  
+  feedback: {
+    userFeedback: '実際の利用者からのフィードバック収集';
+    metrics: 'データに基づく改善判断';
+    iteration: '2週間サイクルでの継続改善';
+  };
+}
+```
+
+## 6. 成功基準・完了定義
+
+### 6.1 MVP（Minimum Viable Product）基準
+
+```typescript
+interface MVPCriteria {
+  core: {
+    automated: '15分間隔での自動実行';
+    scraping: 'クラウドワークスからの案件取得';
+    evaluation: 'ChatGPT による基本評価';
+    notification: '高評価案件の通知';
+    storage: 'S3 での7日間データ保持';
+  };
+  
+  quality: {
+    reliability: '80%以上の成功率';
+    cost: '月$5以下の運用コスト';
+    performance: '平均実行時間2分以内';
+  };
+  
+  deliverables: [
+    '動作するシステム（AWS本番環境）',
+    'ソースコード（GitHubリポジトリ）',
+    '設計書・運用手順書',
+    '基本的な監視・アラート設定'
+  ];
+}
+```
+
+この実装計画書により、S3ベース設計とコスト制約$5/月を満たしながら、段階的かつ確実にシステムを構築できる具体的な道筋が示されました。
 </file>
 
 <file path="docs/01_requirements.md">
@@ -464,22 +2770,24 @@ This section contains the contents of the repository's files.
                            │                       │
                            ▼                       │
     ┌──────────────────────────────────────────────┼───────────────┐
-    │                 DynamoDB                     │               │
+    │                     S3 Bucket                │               │
     │  ┌─────────────────┐  ┌─────────────────┐   │               │
-    │  │ search_conditions│  │   job_data      │   │               │
+    │  │ jobs/           │  │   logs/         │   │               │
+    │  │ (案件データ)      │  │ (実行ログ)       │   │               │
     │  └─────────────────┘  └─────────────────┘   │               │
     │  ┌─────────────────┐  ┌─────────────────┐   │               │
-    │  │   evaluations   │  │execution_logs   │   │               │
+    │  │ evaluations/    │  │  config/        │   │               │
+    │  │ (評価結果)        │  │ (設定ファイル)    │   │               │
     │  └─────────────────┘  └─────────────────┘   │               │
     └──────────────────────────────────────────────┘               │
                            │                                       │
                            ▼                                       │
     ┌──────────────────────────────────────────────────────────────┘
-    │                 支援サービス                                  
-    │  ┌─────────────────┐  ┌─────────────────┐  ┌──────────────┐
-    │  │ CloudWatch      │  │ Parameter Store │  │    SNS/SES   │
-    │  │ (Logs/Alarms)   │  │  (Secrets)      │  │ (Notification)│
-    │  └─────────────────┘  └─────────────────┘  └──────────────┘
+    │                 支援サービス（最小構成）
+    │  ┌─────────────────┐  ┌─────────────────┐
+    │  │ Parameter Store │  │      SNS        │
+    │  │  (Secrets)      │  │ (Error Notify)  │
+    │  └─────────────────┘  └─────────────────┘
     └──────────────────────────────────────────────────────────────┘
                            │
                            ▼
@@ -492,11 +2800,11 @@ This section contains the contents of the repository's files.
 
 ### 1.2 アーキテクチャ方針
 
-- **サーバレスファースト**: AWS Lambdaを中心としたイベント駆動アーキテクチャ
-- **マネージドサービス活用**: DynamoDB、EventBridge、CloudWatch等のフルマネージドサービス
-- **Infrastructure as Code**: AWS CDKによる完全なインフラ管理
-- **セキュリティ重視**: IAMロール、Parameter Store、VPC等でのセキュリティ強化
-- **コスト最適化**: サーバレス課金とOn-Demand課金の活用
+- **コストファースト**: 月$5以下の厳格なコスト制約を最優先
+- **S3中心設計**: データストレージ・ログ・設定をすべてS3で管理
+- **シンプル・軽量**: 複雑な機能を排除し、コア機能に集中
+- **事前フィルタリング**: AI評価前の絞り込みでコスト削減
+- **短期データ管理**: 7日間のTTLで自動削除
 - **型安全性**: TypeScript strict モードで完全な型定義
 
 ### 1.3 技術スタック
@@ -507,20 +2815,19 @@ This section contains the contents of the repository's files.
 - **AWS CDK** (TypeScript): Infrastructure as Code
 
 **データ・ストレージ**
-- **DynamoDB**: NoSQLデータベース（On-Demand課金）
-- **Parameter Store**: シークレット・設定管理
-- **S3**: ログ・レポートファイル保存（必要に応じて）
+- **S3**: 全データの一元管理（案件・ログ・設定・評価結果）
+- **S3 Lifecycle Policy**: 7日後自動削除
+- **Parameter Store**: シークレット管理のみ
 
 **言語・ライブラリ**
 - **TypeScript** (v5以上): 型安全性確保、any型使用禁止
 - **Playwright**: ブラウザ自動化（Lambda Layer）
 - **AWS SDK v3**: AWS サービス連携
-- **OpenAI SDK**: ChatGPT連携
+- **OpenAI SDK**: ChatGPT連携（軽量利用）
 
-**監視・運用**
-- **CloudWatch**: ログ・メトリクス・アラーム
-- **AWS X-Ray**: 分散トレーシング
-- **SNS/SES**: 通知機能
+**監視・運用（最小構成）**
+- **SNS**: エラー通知のみ
+- **S3ベースログ**: 構造化JSON形式
 
 ## 2. コンポーネント設計
 
@@ -529,8 +2836,7 @@ This section contains the contents of the repository's files.
 **責務**
 - EventBridge からのトリガー受信
 - Lambda関数の実行制御
-- 実行状態の管理
-- 実行履歴の記録
+- 実行時間の最適化（1分以内目標）
 
 **実装方式**
 ```typescript
@@ -550,124 +2856,195 @@ interface SchedulerEvent {
 ### 2.2 スクレイパー
 
 **責務**
-- クラウドワークスへのアクセス
-- 認証・ログイン処理
-- 案件データの抽出
-- HTMLパースとデータ正規化
+- クラウドワークスへの軽量アクセス
+- 効率的なデータ抽出（最大50件/回）
+- 事前フィルタリング実行
 
-**Lambda Layer構成**
+**軽量化設計**
 ```typescript
-// Playwright Layer (Chrome Binary含む)
-const playwrightLayer = new lambda.LayerVersion(this, 'PlaywrightLayer', {
-  code: lambda.Code.fromAsset('layers/playwright'),
-  compatibleRuntimes: [lambda.Runtime.NODEJS_18_X],
-  description: 'Playwright with Chrome for Lambda'
-});
-
 interface IScrapperService {
   authenticateUser(credentials: LoginCredentials): Promise<void>;
-  searchJobs(condition: SearchCondition): Promise<JobData[]>;
-  extractJobDetails(jobUrl: string): Promise<JobDetail>;
+  searchJobsLight(condition: SearchCondition): Promise<JobData[]>;
+  applyPreFilter(jobs: JobData[]): JobData[]; // AI評価前フィルタ
   validateJobData(job: JobData): boolean;
 }
+
+// 事前フィルタリング例
+const applyPreFilter = (jobs: JobData[]): JobData[] => {
+  return jobs.filter(job => 
+    job.budget >= 50000 &&           // 最低予算
+    job.clientRating >= 4.0 &&       // クライアント評価
+    hasTargetSkills(job.skills) &&   // スキルマッチング
+    isReasonableDeadline(job.deadline) // 納期チェック
+  );
+};
 ```
 
-### 2.3 データストレージ
+### 2.3 データストレージ（S3ベース）
 
 **責務**
-- DynamoDBテーブル操作
-- データの永続化・取得
-- 重複チェック
-- データ整合性保証
+- S3での構造化データ管理
+- JSON形式でのシンプルな読み書き
+- TTL機能による自動削除
 
-**DynamoDB テーブル設計**
+**ファイル構造設計**
 ```typescript
-// 検索条件テーブル
-const searchConditionsTable = new dynamodb.Table(this, 'SearchConditions', {
-  partitionKey: { name: 'id', type: dynamodb.AttributeType.STRING },
-  billingMode: dynamodb.BillingMode.ON_DEMAND,
-  encryption: dynamodb.TableEncryption.AWS_MANAGED,
-  pointInTimeRecovery: true
-});
-
-// 案件データテーブル
-const jobsTable = new dynamodb.Table(this, 'Jobs', {
-  partitionKey: { name: 'id', type: dynamodb.AttributeType.STRING },
-  sortKey: { name: 'scrapedAt', type: dynamodb.AttributeType.STRING },
-  billingMode: dynamodb.BillingMode.ON_DEMAND,
-  encryption: dynamodb.TableEncryption.AWS_MANAGED,
-  timeToLiveAttribute: 'ttl' // 90日で自動削除
-});
-
-// GlobalSecondaryIndex for queries
-jobsTable.addGlobalSecondaryIndex({
-  indexName: 'ScoreIndex',
-  partitionKey: { name: 'score', type: dynamodb.AttributeType.NUMBER },
-  sortKey: { name: 'scrapedAt', type: dynamodb.AttributeType.STRING }
-});
-```
-
-### 2.4 AI評価エンジン
-
-**責務**
-- ChatGPT APIとの通信
-- プロンプト管理・最適化
-- 評価結果の解析・バリデーション
-- レート制限対応
-
-**実装**
-```typescript
-interface IAIEvaluatorService {
-  evaluateJob(job: JobData): Promise<JobEvaluation>;
-  evaluateJobsBatch(jobs: JobData[]): Promise<JobEvaluation[]>;
-  createEvaluationPrompt(job: JobData): string;
-  parseEvaluationResponse(response: string): JobEvaluation;
+// S3 Bucket構造
+interface S3Structure {
+  'jobs/': {
+    pattern: 'YYYY-MM-DDTHH-mm.json';
+    example: '2024-01-15T14-30.json';
+    ttl: '7 days';
+  };
+  'evaluations/': {
+    pattern: 'YYYY-MM-DDTHH-mm.json';
+    example: '2024-01-15T14-30.json';
+    ttl: '7 days';
+  };
+  'logs/': {
+    execution: 'YYYY-MM-DDTHH-mm-execution.json';
+    error: 'YYYY-MM-DDTHH-mm-error.json';
+    daily: 'daily-summary/YYYY-MM-DD.json';
+    ttl: '7 days';
+  };
+  'config/': {
+    searchConditions: 'search-conditions.json';
+    system: 'system-config.json';
+    ttl: 'none';
+  };
 }
 
-class AIEvaluatorService implements IAIEvaluatorService {
-  private openAI: OpenAI;
-  private rateLimiter: RateLimiter;
-  
-  constructor(apiKey: string) {
-    this.openAI = new OpenAI({ apiKey });
-    this.rateLimiter = new RateLimiter({
-      requestsPerMinute: 60,
-      requestsPerDay: 10000
-    });
+// データ操作サービス
+class S3DataService {
+  async saveJobs(jobs: JobData[]): Promise<void> {
+    const timestamp = new Date().toISOString().slice(0, 16);
+    await this.s3.putObject({
+      Bucket: this.bucketName,
+      Key: `jobs/${timestamp}.json`,
+      Body: JSON.stringify(jobs, null, 2),
+      ServerSideEncryption: 'AES256'
+    }).promise();
+  }
+
+  async getRecentJobs(hours: number = 24): Promise<JobData[]> {
+    const cutoff = new Date(Date.now() - hours * 60 * 60 * 1000);
+    const objects = await this.listObjectsSince('jobs/', cutoff);
+    
+    const allJobs: JobData[] = [];
+    for (const obj of objects) {
+      const data = await this.getObject(obj.Key);
+      allJobs.push(...JSON.parse(data));
+    }
+    return allJobs;
+  }
+
+  async getExistingJobIds(hours: number = 48): Promise<Set<string>> {
+    const recentJobs = await this.getRecentJobs(hours);
+    return new Set(recentJobs.map(job => job.id));
   }
 }
 ```
 
-### 2.5 設定管理
+### 2.4 AI評価エンジン（軽量版）
 
 **責務**
-- Parameter Store からの設定読み込み
-- 検索条件の管理
-- シークレット情報の安全な取得
+- 事前フィルタ済み案件のみ評価
+- バッチ処理での効率化
+- コスト監視機能
 
-**Parameter Store構成**
+**軽量実装**
 ```typescript
-// システム設定
-const systemConfig = new ssm.StringParameter(this, 'SystemConfig', {
-  parameterName: '/crowdworks-searcher/config/system',
-  stringValue: JSON.stringify({
-    maxJobsPerExecution: 100,
-    aiModel: 'gpt-4',
-    scoreThreshold: 7,
-    notificationEnabled: true
-  })
-});
+class LightAIEvaluatorService {
+  private monthlyUsage: number = 0;
+  private readonly MONTHLY_LIMIT = 3; // $3/月制限
 
-// シークレット設定
-const secrets = new ssm.StringParameter(this, 'Secrets', {
-  parameterName: '/crowdworks-searcher/secrets',
-  stringValue: JSON.stringify({
-    openaiApiKey: '${OpenAI_API_KEY}',
-    crowdworksEmail: '${CROWDWORKS_EMAIL}',
-    crowdworksPassword: '${CROWDWORKS_PASSWORD}'
-  }),
-  type: ssm.ParameterType.SECURE_STRING
-});
+  async evaluateFilteredJobs(jobs: JobData[]): Promise<JobEvaluation[]> {
+    // コスト制限チェック
+    if (this.monthlyUsage >= this.MONTHLY_LIMIT) {
+      throw new Error('Monthly AI budget exceeded');
+    }
+
+    // 最重要案件のみ評価（さらなる絞り込み）
+    const priorityJobs = this.selectPriorityJobs(jobs);
+    
+    const evaluations: JobEvaluation[] = [];
+    for (const job of priorityJobs) {
+      try {
+        const evaluation = await this.evaluateJob(job);
+        evaluations.push(evaluation);
+        
+        // 使用量追跡
+        this.monthlyUsage += this.estimateTokenCost(job);
+        
+      } catch (error) {
+        // AI評価失敗時はデフォルトスコア
+        evaluations.push(this.createDefaultEvaluation(job));
+      }
+    }
+    
+    return evaluations;
+  }
+
+  private selectPriorityJobs(jobs: JobData[]): JobData[] {
+    return jobs
+      .sort((a, b) => b.budget - a.budget) // 高予算順
+      .slice(0, 10); // 上位10件のみ
+  }
+
+  private estimateTokenCost(job: JobData): number {
+    const tokenCount = (job.title.length + job.description.length) / 4;
+    return tokenCount * 0.002 / 1000; // GPT-3.5-turbo価格
+  }
+}
+```
+
+### 2.5 設定管理（S3ベース）
+
+**責務**
+- S3での設定ファイル管理
+- Parameter Store でのシークレット管理
+- 軽量な設定読み込み
+
+**設定構造**
+```typescript
+// config/system-config.json
+interface SystemConfig {
+  scraping: {
+    maxJobsPerExecution: 50;
+    preFilterEnabled: true;
+    minBudget: 50000;
+    minClientRating: 4.0;
+  };
+  ai: {
+    enabled: true;
+    model: 'gpt-3.5-turbo';
+    maxJobsForEvaluation: 10;
+    monthlyBudgetLimit: 3.0;
+  };
+  notification: {
+    enabled: true;
+    scoreThreshold: 7;
+    errorNotificationEnabled: true;
+  };
+  storage: {
+    retentionDays: 7;
+    compressionEnabled: false;
+  };
+}
+
+// config/search-conditions.json
+interface SearchConditions {
+  conditions: Array<{
+    id: string;
+    name: string;
+    keywords: string[];
+    budgetMin: number;
+    budgetMax: number;
+    category: string;
+    workType: 'fixed' | 'hourly';
+    enabled: boolean;
+  }>;
+}
 ```
 
 ## 3. データフロー
@@ -678,81 +3055,123 @@ const secrets = new ssm.StringParameter(this, 'Secrets', {
 EventBridge ──15分──▶ Lambda Function (Main Handler)
                             │
                             ▼
-                    Parameter Store ──設定取得──▶ Scraper Service
-                            │                          │
-                            ▼                          ▼
-                    DynamoDB ◀──検索条件取得──── CrowdWorks Site
-                    (SearchConditions)             │
-                            │                      ▼
-                            ▼                 案件データ
-                    DynamoDB ◀────保存────── Data Normalizer
-                    (Jobs)                        │
-                            │                      ▼
-                            ▼                 AI Evaluator
-                    DynamoDB ◀────評価結果─── (ChatGPT API)
-                    (Evaluations)                 │
-                            │                      ▼
-                            ▼                 Notification
-                    CloudWatch ◀──ログ出力─── (SNS/SES)
-                    (Logs)
+                    Parameter Store ──シークレット取得──▶ Scraper Service
+                            │                              │
+                            ▼                              ▼
+                    S3 Config ◀──設定読み込み──────── CrowdWorks Site
+                    (search-conditions.json)           │
+                            │                          ▼
+                            ▼                     案件データ取得
+                    S3 Jobs ◀──重複チェック────── Pre-Filter
+                    (過去48時間分)                    │
+                            │                          ▼
+                            ▼                     新規案件
+                    S3 Jobs ◀────新規案件保存──── Light AI Evaluator
+                    (timestamp.json)                  │
+                            │                          ▼
+                            ▼                     評価結果
+                    S3 Evaluations ◀──評価保存─── High Score Filter
+                    (timestamp.json)                  │
+                            │                          ▼
+                            ▼                     通知判定
+                    S3 Logs ◀────実行ログ────── SNS Notification
+                    (execution.json)              (エラー・高評価)
 ```
 
 ### 3.2 処理フロー
 
-**メイン処理フロー（Lambda Handler）**
+**最適化されたメイン処理フロー**
 ```typescript
 export const handler = async (event: SchedulerEvent): Promise<void> => {
-  const executionId = uuidv4();
-  const logger = new Logger({ executionId });
+  const executionId = Date.now().toString();
+  const startTime = Date.now();
+  const timestamp = new Date().toISOString().slice(0, 16);
   
+  const log: ExecutionLog = {
+    executionId,
+    timestamp,
+    status: 'success',
+    duration: 0,
+    jobsScraped: 0,
+    newJobs: 0,
+    aiEvaluated: 0,
+    highScoreJobs: 0,
+    costEstimate: 0
+  };
+
   try {
-    // 1. 設定・認証情報取得
-    const config = await configService.getSystemConfig();
-    const credentials = await configService.getCredentials();
-    
-    // 2. 検索条件取得
-    const searchConditions = await dataService.getActiveSearchConditions();
-    
+    // 1. 設定とシークレット取得（並列）
+    const [config, credentials] = await Promise.all([
+      s3DataService.getSystemConfig(),
+      parameterService.getCredentials()
+    ]);
+
+    // 2. 重複チェック用データ取得
+    const existingJobIds = await s3DataService.getExistingJobIds(48);
+
     // 3. スクレイピング実行
     const scraper = new ScraperService(credentials);
-    const allJobs: JobData[] = [];
-    
-    for (const condition of searchConditions) {
-      const jobs = await scraper.searchJobs(condition);
-      allJobs.push(...jobs);
+    const allJobs = await scraper.searchJobsLight(config.searchConditions);
+    log.jobsScraped = allJobs.length;
+
+    // 4. 重複排除
+    const newJobs = allJobs.filter(job => !existingJobIds.has(job.id));
+    log.newJobs = newJobs.length;
+
+    if (newJobs.length === 0) {
+      log.duration = Date.now() - startTime;
+      await s3DataService.saveExecutionLog(log, timestamp);
+      return; // 新規案件なしで終了
     }
-    
-    // 4. 重複排除・新規案件フィルタ
-    const newJobs = await dataService.filterNewJobs(allJobs);
-    
-    // 5. データ保存
-    await dataService.saveJobs(newJobs);
-    
-    // 6. AI評価実行
-    const evaluator = new AIEvaluatorService(config.openaiApiKey);
-    const evaluations = await evaluator.evaluateJobsBatch(newJobs);
-    
-    // 7. 評価結果保存
-    await dataService.saveEvaluations(evaluations);
-    
-    // 8. 高評価案件通知
-    const highScoreJobs = evaluations.filter(e => e.score >= config.scoreThreshold);
+
+    // 5. 新規案件保存
+    await s3DataService.saveJobs(newJobs, timestamp);
+
+    // 6. 事前フィルタ実行
+    const filteredJobs = scraper.applyPreFilter(newJobs);
+
+    // 7. AI評価（フィルタ後の優先案件のみ）
+    let evaluations: JobEvaluation[] = [];
+    if (config.ai.enabled && filteredJobs.length > 0) {
+      const aiEvaluator = new LightAIEvaluatorService();
+      evaluations = await aiEvaluator.evaluateFilteredJobs(filteredJobs);
+      log.aiEvaluated = evaluations.length;
+      log.costEstimate = aiEvaluator.getSessionCost();
+
+      // 8. 評価結果保存
+      await s3DataService.saveEvaluations(evaluations, timestamp);
+    }
+
+    // 9. 高評価案件通知
+    const highScoreJobs = evaluations.filter(e => e.score >= config.notification.scoreThreshold);
+    log.highScoreJobs = highScoreJobs.length;
+
     if (highScoreJobs.length > 0) {
       await notificationService.sendHighScoreAlert(highScoreJobs);
     }
-    
-    // 9. 実行ログ記録
-    await dataService.saveExecutionLog({
-      status: 'success',
-      jobsFound: allJobs.length,
-      newJobs: newJobs.length,
-      highScoreJobs: highScoreJobs.length,
-      executionTime: Date.now() - startTime
-    });
-    
+
+    // 10. 実行ログ保存
+    log.duration = Date.now() - startTime;
+    await s3DataService.saveExecutionLog(log, timestamp);
+
   } catch (error) {
-    logger.error('Execution failed', { error });
-    await handleError(error, executionId);
+    log.status = 'error';
+    log.error = {
+      type: error.constructor.name,
+      message: error.message,
+      stack: error.stack
+    };
+    log.duration = Date.now() - startTime;
+
+    // エラーログ保存
+    await s3DataService.saveErrorLog(log, timestamp);
+
+    // 重要エラーの通知
+    if (shouldNotifyError(error)) {
+      await notificationService.sendErrorAlert(error, executionId);
+    }
+
+    throw error; // Lambda失敗として記録
   }
 };
 ```
@@ -761,105 +3180,95 @@ export const handler = async (event: SchedulerEvent): Promise<void> => {
 
 ### 4.1 外部API連携
 
-**ChatGPT API**
+**ChatGPT API（軽量版）**
 ```typescript
-interface ChatGPTRequest {
-  model: 'gpt-4' | 'gpt-3.5-turbo';
+interface LightChatGPTRequest {
+  model: 'gpt-3.5-turbo'; // GPT-4は使用しない（コスト削減）
   messages: ChatCompletionMessage[];
-  max_tokens: number;
-  temperature: number;
+  max_tokens: 200; // 短縮
+  temperature: 0.3; // 一貫性重視
   response_format: { type: 'json_object' };
 }
 
-const EVALUATION_PROMPT_TEMPLATE = `
-以下の案件情報を評価して、JSON形式で回答してください：
+const LIGHT_EVALUATION_PROMPT = `
+案件を簡潔に評価してください（予算:{budget}円、クライアント評価:{clientRating}）：
 
-案件情報:
-- タイトル: {title}
-- 予算: {budget}円
-- 納期: {deadline}
-- クライアント評価: {clientRating}/5.0
-- 必要スキル: {skills}
-- 詳細: {description}
+{title}
 
-評価基準:
-1. 予算の妥当性（相場との比較）
-2. スキルマッチング度
-3. クライアントの信頼性
-4. 案件説明の明確性
-5. 納期の現実性
+スキル: {skills}
+詳細: {description}
 
-回答形式:
-{
-  "score": 1-10の整数,
-  "reason": "評価理由の詳細説明",
-  "strengths": ["強み1", "強み2"],
-  "concerns": ["懸念点1", "懸念点2"]
-}
+JSON形式で回答:
+{"score": 1-10, "reason": "50文字以内"}
 `;
 ```
 
-### 4.2 内部API設計
+### 4.2 内部データ構造
 
-**管理用API（API Gateway + Lambda）**
+**軽量化データ型**
 ```typescript
-// GET /api/status - システム状態取得
-export const getSystemStatus = async (): Promise<SystemStatus> => {
-  const lastExecution = await getLastExecutionLog();
-  const jobStats = await getJobStatistics();
-  
-  return {
-    schedulerStatus: 'running',
-    lastExecution: lastExecution?.executedAt,
-    nextExecution: getNextExecutionTime(),
-    totalJobs: jobStats.total,
-    highScoreJobs: jobStats.highScore,
-    averageScore: jobStats.averageScore
-  };
-};
+interface JobData {
+  id: string;
+  title: string;
+  description: string; // 500文字まで
+  budget: number;
+  deadline: Date;
+  clientRating: number;
+  skills: string[]; // 最大5個
+  url: string;
+  scrapedAt: Date;
+}
 
-// GET /api/jobs - 案件一覧取得
-export const getJobs = async (query: JobQuery): Promise<JobsResponse> => {
-  const { scoreMin, limit = 20, lastKey } = query;
-  
-  return await dynamoService.queryJobs({
-    IndexName: 'ScoreIndex',
-    KeyConditionExpression: 'score >= :scoreMin',
-    ExpressionAttributeValues: { ':scoreMin': scoreMin },
-    Limit: limit,
-    ExclusiveStartKey: lastKey
-  });
-};
+interface JobEvaluation {
+  jobId: string;
+  score: number; // 1-10
+  reason: string; // 50文字以内
+  evaluatedAt: Date;
+  tokenUsed: number; // コスト追跡
+}
+
+interface ExecutionLog {
+  executionId: string;
+  timestamp: string;
+  status: 'success' | 'error' | 'partial';
+  duration: number;
+  jobsScraped: number;
+  newJobs: number;
+  aiEvaluated: number;
+  highScoreJobs: number;
+  costEstimate: number;
+  error?: {
+    type: string;
+    message: string;
+    stack?: string;
+  };
+}
 ```
 
 ## 5. セキュリティ設計
 
-### 5.1 認証・認可
+### 5.1 認証・認可（最小権限）
 
 **IAM ロール設計**
 ```typescript
-// Lambda実行ロール
 const lambdaRole = new iam.Role(this, 'LambdaExecutionRole', {
   assumedBy: new iam.ServicePrincipal('lambda.amazonaws.com'),
   managedPolicies: [
     iam.ManagedPolicy.fromAwsManagedPolicyName('service-role/AWSLambdaBasicExecutionRole')
   ],
   inlinePolicies: {
-    DynamoDBAccess: new iam.PolicyDocument({
+    S3Access: new iam.PolicyDocument({
       statements: [
         new iam.PolicyStatement({
           effect: iam.Effect.ALLOW,
           actions: [
-            'dynamodb:GetItem',
-            'dynamodb:PutItem',
-            'dynamodb:UpdateItem',
-            'dynamodb:Query',
-            'dynamodb:Scan'
+            's3:GetObject',
+            's3:PutObject',
+            's3:ListBucket'
           ],
           resources: [
-            jobsTable.tableArn,
-            searchConditionsTable.tableArn,
-            `${jobsTable.tableArn}/index/*`
+            s3Bucket.bucketArn,
+            `${s3Bucket.bucketArn}/*`
           ]
         })
       ]
@@ -868,8 +3277,17 @@ const lambdaRole = new iam.Role(this, 'LambdaExecutionRole', {
       statements: [
         new iam.PolicyStatement({
           effect: iam.Effect.ALLOW,
-          actions: ['ssm:GetParameter', 'ssm:GetParameters'],
-          resources: [`arn:aws:ssm:${region}:${account}:parameter/crowdworks-searcher/*`]
+          actions: ['ssm:GetParameter'],
+          resources: [`arn:aws:ssm:${region}:${account}:parameter/crowdworks-searcher/secrets`]
+        })
+      ]
+    }),
+    SNSAccess: new iam.PolicyDocument({
+      statements: [
+        new iam.PolicyStatement({
+          effect: iam.Effect.ALLOW,
+          actions: ['sns:Publish'],
+          resources: [errorTopic.topicArn]
         })
       ]
     })
@@ -879,57 +3297,46 @@ const lambdaRole = new iam.Role(this, 'LambdaExecutionRole', {
 
 ### 5.2 データ保護
 
-**暗号化設定**
+**S3セキュリティ設定**
 ```typescript
-// DynamoDB暗号化
-const table = new dynamodb.Table(this, 'JobsTable', {
-  encryption: dynamodb.TableEncryption.AWS_MANAGED,
-  pointInTimeRecovery: true
-});
-
-// Parameter Store暗号化
-const secureParameter = new ssm.StringParameter(this, 'Secrets', {
-  type: ssm.ParameterType.SECURE_STRING,
-  keyId: kms.Alias.fromAliasName(this, 'ParameterStoreKey', 'alias/aws/ssm')
-});
-
-// CloudWatch Logs暗号化
-const logGroup = new logs.LogGroup(this, 'LambdaLogs', {
-  encryptionKey: new kms.Key(this, 'LogsEncryptionKey'),
-  retention: logs.RetentionDays.ONE_MONTH
+const s3Bucket = new s3.Bucket(this, 'CrowdWorksSearcherBucket', {
+  encryption: s3.BucketEncryption.S3_MANAGED,
+  blockPublicAccess: s3.BlockPublicAccess.BLOCK_ALL,
+  lifecycleRules: [
+    {
+      id: 'DeleteOldData',
+      enabled: true,
+      expiration: Duration.days(7), // 7日後自動削除
+      abortIncompleteMultipartUploadAfter: Duration.days(1)
+    }
+  ],
+  versioning: false, // コスト削減
+  removalPolicy: RemovalPolicy.DESTROY
 });
 ```
 
 ## 6. エラーハンドリング設計
 
-### 6.1 エラー分類
+### 6.1 エラー分類（簡素化）
 
 ```typescript
 export enum ErrorType {
-  // AWS関連エラー
+  // 重要エラー（通知必要）
+  AUTHENTICATION_ERROR = 'AUTH_ERROR',
   LAMBDA_TIMEOUT = 'LAMBDA_TIMEOUT',
-  DYNAMODB_ERROR = 'DYNAMODB_ERROR',
-  PARAMETER_STORE_ERROR = 'PARAMETER_STORE_ERROR',
+  S3_ACCESS_ERROR = 'S3_ACCESS_ERROR',
   
-  // 外部サービスエラー
-  OPENAI_API_ERROR = 'OPENAI_API_ERROR',
+  // 軽微エラー（ログのみ）
   SCRAPING_ERROR = 'SCRAPING_ERROR',
-  NETWORK_ERROR = 'NETWORK_ERROR',
-  
-  // ビジネスロジックエラー
-  VALIDATION_ERROR = 'VALIDATION_ERROR',
-  AUTHENTICATION_ERROR = 'AUTHENTICATION_ERROR',
-  
-  // システムエラー
-  UNKNOWN_ERROR = 'UNKNOWN_ERROR'
+  AI_API_ERROR = 'AI_API_ERROR',
+  NETWORK_ERROR = 'NETWORK_ERROR'
 }
 
-export class AppError extends Error {
+export class LightAppError extends Error {
   constructor(
     public type: ErrorType,
     message: string,
-    public retryable: boolean = false,
-    public context?: Record<string, any>
+    public retryable: boolean = false
   ) {
     super(message);
   }
@@ -938,153 +3345,156 @@ export class AppError extends Error {
 
 ### 6.2 エラー処理方針
 
-**自動再試行戦略**
+**軽量エラーハンドリング**
 ```typescript
-class RetryHandler {
+class LightRetryHandler {
   async executeWithRetry<T>(
     operation: () => Promise<T>,
-    maxRetries: number = 3,
-    backoffMs: number = 1000
+    maxRetries: number = 2 // 削減
   ): Promise<T> {
     for (let attempt = 1; attempt <= maxRetries; attempt++) {
       try {
         return await operation();
       } catch (error) {
-        if (!this.isRetryable(error) || attempt === maxRetries) {
-          throw error;
-        }
-        
-        const delay = backoffMs * Math.pow(2, attempt - 1);
-        await this.sleep(delay);
+        if (attempt === maxRetries) throw error;
+        await this.sleep(1000 * attempt); // シンプルなバックオフ
       }
     }
-    
     throw new Error('Max retries exceeded');
   }
-  
-  private isRetryable(error: any): boolean {
-    return error instanceof AppError && error.retryable;
-  }
-}
-```
-
-**CloudWatch Alarms**
-```typescript
-// Lambda関数エラー率監視
-new cloudwatch.Alarm(this, 'LambdaErrorAlarm', {
-  metric: lambdaFunction.metricErrors(),
-  threshold: 5,
-  evaluationPeriods: 2,
-  alarmDescription: 'Lambda function error rate is high'
-});
-
-// DynamoDB エラー監視
-new cloudwatch.Alarm(this, 'DynamoDBErrorAlarm', {
-  metric: table.metricSystemErrorsForOperations({
-    operations: [dynamodb.Operation.PUT_ITEM, dynamodb.Operation.GET_ITEM]
-  }),
-  threshold: 10,
-  evaluationPeriods: 1
-});
-```
-
-## 7. ログ設計
-
-### 7.1 ログレベル定義
-
-```typescript
-export enum LogLevel {
-  ERROR = 'ERROR',
-  WARN = 'WARN', 
-  INFO = 'INFO',
-  DEBUG = 'DEBUG'
 }
 
-export interface StructuredLog {
-  timestamp: string;
-  level: LogLevel;
-  executionId: string;
-  component: string;
-  message: string;
-  context?: Record<string, any>;
-  error?: {
-    name: string;
-    message: string;
-    stack: string;
+const shouldNotifyError = (error: Error): boolean => {
+  const criticalErrors = [
+    'AUTHENTICATION_ERROR',
+    'LAMBDA_TIMEOUT', 
+    'S3_ACCESS_ERROR'
+  ];
+  return criticalErrors.includes(error.constructor.name);
+};
+```
+
+## 7. ログ設計（S3ベース）
+
+### 7.1 S3ログ構造
+
+```typescript
+interface S3LogStructure {
+  'logs/execution/': {
+    pattern: 'YYYY-MM-DDTHH-mm-execution.json';
+    content: ExecutionLog;
+    retention: '7 days';
+  };
+  'logs/error/': {
+    pattern: 'YYYY-MM-DDTHH-mm-error.json';
+    content: ExecutionLog; // status = 'error'
+    retention: '7 days';
+  };
+  'logs/daily-summary/': {
+    pattern: 'YYYY-MM-DD.json';
+    content: DailySummary;
+    retention: '7 days';
   };
 }
+
+interface DailySummary {
+  date: string;
+  totalExecutions: number;
+  successfulExecutions: number;
+  totalJobsFound: number;
+  totalNewJobs: number;
+  averageScore: number;
+  highScoreJobs: number;
+  totalAICost: number;
+  errors: string[];
+}
 ```
 
-### 7.2 ログ出力方針
+### 7.2 ログ実装
 
-**構造化ログ実装**
+**軽量ログサービス**
 ```typescript
-export class Logger {
-  constructor(private executionId: string) {}
-  
-  info(message: string, context?: Record<string, any>): void {
-    this.log(LogLevel.INFO, message, context);
+class S3LogService {
+  async saveExecutionLog(log: ExecutionLog, timestamp: string): Promise<void> {
+    await this.s3.putObject({
+      Bucket: this.bucketName,
+      Key: `logs/execution/${timestamp}-execution.json`,
+      Body: JSON.stringify(log, null, 2),
+      ContentType: 'application/json'
+    }).promise();
   }
-  
-  error(message: string, context?: Record<string, any>, error?: Error): void {
-    this.log(LogLevel.ERROR, message, {
-      ...context,
-      error: error ? {
-        name: error.name,
-        message: error.message,
-        stack: error.stack
-      } : undefined
-    });
+
+  async saveErrorLog(log: ExecutionLog, timestamp: string): Promise<void> {
+    await this.s3.putObject({
+      Bucket: this.bucketName,
+      Key: `logs/error/${timestamp}-error.json`,
+      Body: JSON.stringify(log, null, 2),
+      ContentType: 'application/json'
+    }).promise();
   }
-  
-  private log(level: LogLevel, message: string, context?: Record<string, any>): void {
-    const logEntry: StructuredLog = {
-      timestamp: new Date().toISOString(),
-      level,
-      executionId: this.executionId,
-      component: 'crowdworks-searcher',
-      message,
-      context: this.sanitizeContext(context)
+
+  async generateDailySummary(date: string): Promise<DailySummary> {
+    const dayLogs = await this.getLogsForDate(date);
+    
+    return {
+      date,
+      totalExecutions: dayLogs.length,
+      successfulExecutions: dayLogs.filter(l => l.status === 'success').length,
+      totalJobsFound: dayLogs.reduce((sum, l) => sum + l.jobsScraped, 0),
+      totalNewJobs: dayLogs.reduce((sum, l) => sum + l.newJobs, 0),
+      averageScore: this.calculateAverageScore(dayLogs),
+      highScoreJobs: dayLogs.reduce((sum, l) => sum + l.highScoreJobs, 0),
+      totalAICost: dayLogs.reduce((sum, l) => sum + l.costEstimate, 0),
+      errors: dayLogs.filter(l => l.error).map(l => l.error!.message)
     };
-    
-    console.log(JSON.stringify(logEntry));
-  }
-  
-  private sanitizeContext(context?: Record<string, any>): Record<string, any> | undefined {
-    if (!context) return undefined;
-    
-    // 機密情報のマスキング
-    const sanitized = { ...context };
-    const sensitiveKeys = ['password', 'token', 'apiKey', 'secret'];
-    
-    for (const key of sensitiveKeys) {
-      if (key in sanitized) {
-        sanitized[key] = '***MASKED***';
-      }
-    }
-    
-    return sanitized;
   }
 }
 ```
 
-**CloudWatch Logs設定**
-```typescript
-const logGroup = new logs.LogGroup(this, 'LambdaLogGroup', {
-  logGroupName: `/aws/lambda/${lambdaFunction.functionName}`,
-  retention: logs.RetentionDays.ONE_MONTH,
-  removalPolicy: RemovalPolicy.DESTROY
-});
+## 8. コスト最適化戦略
 
-// ログメトリクスフィルター
-new logs.MetricFilter(this, 'ErrorMetricFilter', {
-  logGroup,
-  metricNamespace: 'CrowdWorksSearcher',
-  metricName: 'Errors',
-  filterPattern: logs.FilterPattern.stringValue('$.level', '=', 'ERROR'),
-  metricValue: '1'
-});
+### 8.1 コスト監視
+
+```typescript
+interface CostMonitor {
+  trackLambdaExecution(duration: number, memoryMB: number): void;
+  trackS3Operations(operations: S3Operation[]): void;
+  trackAIUsage(tokens: number, model: string): void;
+  generateMonthlyCostReport(): MonthlyCostReport;
+}
+
+interface MonthlyCostReport {
+  lambda: { executions: number; cost: number };
+  s3: { operations: number; storage: number; cost: number };
+  ai: { tokens: number; cost: number };
+  other: { sns: number; parameterStore: number };
+  total: number;
+  budgetRemaining: number;
+}
 ```
+
+### 8.2 自動コスト制御
+
+```typescript
+class CostController {
+  private monthlyBudget = 5.0; // $5制限
+
+  async checkBudgetBeforeExecution(): Promise<boolean> {
+    const currentCost = await this.getCurrentMonthlyCost();
+    return currentCost < this.monthlyBudget * 0.9; // 90%で制限
+  }
+
+  async suspendExpensiveFeatures(): Promise<void> {
+    // AI評価を一時停止
+    await this.updateConfig({ ai: { enabled: false } });
+    
+    // 通知送信
+    await this.notifyBudgetExceeded();
+  }
+}
+```
+
+**これで月$5以下での運用が可能な設計になりました！**
 </file>
 
 <file path="readme.md">
