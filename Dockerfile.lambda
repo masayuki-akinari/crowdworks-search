@@ -1,0 +1,70 @@
+# ================================================
+# Lambda Container用Dockerfile
+# Playwright + Chromium環境の最適化版
+# ================================================
+
+# AWS Lambda Node.js基盤イメージ
+FROM public.ecr.aws/lambda/nodejs:18
+
+# ビルド引数
+ARG STAGE=development
+ARG NODE_ENV=production
+
+# 環境変数設定
+ENV NODE_ENV=${NODE_ENV}
+ENV STAGE=${STAGE}
+ENV PLAYWRIGHT_BROWSERS_PATH=/usr/bin
+ENV PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1
+
+# 作業ディレクトリ設定
+WORKDIR ${LAMBDA_TASK_ROOT}
+
+# システム依存関係のインストール（Chromium + 関連ライブラリ）
+RUN dnf update -y && \
+    dnf install -y \
+    chromium \
+    nss \
+    atk \
+    at-spi2-atk \
+    gtk3 \
+    cups-libs \
+    drm \
+    libXt \
+    libXext \
+    libXdamage \
+    libXrandr \
+    libXcomposite \
+    libXcursor \
+    libXss \
+    libXi \
+    GConf2 \
+    alsa-lib \
+    && dnf clean all \
+    && rm -rf /var/cache/dnf
+
+# Chromiumの動作確認とバイナリパス設定
+RUN ln -sf /usr/bin/chromium-browser /usr/bin/chromium \
+    && chromium --version \
+    && echo "Chromium installed successfully"
+
+# Node.js依存関係のコピーとインストール
+COPY package*.json ./
+RUN npm ci --omit=dev --ignore-scripts && \
+    npm cache clean --force
+
+# アプリケーションコードのコピー
+COPY dist/ ./dist/
+COPY src/types/ ./src/types/
+
+# パーミッション設定
+RUN chmod +x dist/lambda/handler.js
+
+# Playwright設定確認
+RUN node -e "console.log('Node.js version:', process.version)" && \
+    node -e "const { chromium } = require('playwright'); console.log('Playwright loaded successfully')"
+
+# ヘルスチェック（ビルド時確認）
+RUN node -e "console.log('Lambda Container build completed successfully')"
+
+# Lambda関数エントリポイント
+CMD ["dist/lambda/handler.lambdaHandler"] 

@@ -114,14 +114,61 @@ export interface LoginCredentials {
 
 // Lambda イベント型
 export interface ScheduledExecutionEvent {
-  source: 'aws.events';
-  'detail-type': 'Scheduled Event';
-  detail: Record<string, unknown>;
-  time: string; // ISO形式
+  source: string;
+  'detail-type': string;
+  detail: Record<string, any>;
+  time?: string; // ISO形式（オプション）
 }
 
-// Lambda レスポンス型
+// Lambda レスポンス型（新形式）
 export interface ScheduledExecutionResponse {
+  statusCode: number; // HTTP レスポンスコード
+  body: string; // JSON文字列レスポンス
+  executionTime: number; // 実行時間（ミリ秒）
+  timestamp: string; // ISO形式タイムスタンプ
+}
+
+// Playwright動作確認結果型
+export interface PlaywrightTestResult {
+  success: boolean;
+  chromiumVersion?: string;
+  title?: string;
+  screenshot?: boolean;
+  error?: string;
+  executionTime: number;
+}
+
+// Lambda実行結果型（新形式）
+export interface LambdaExecutionResult {
+  phases: {
+    playwright: PlaywrightTestResult;
+    crowdworksLogin: {
+      success: boolean;
+      loginResult?: CrowdWorksLoginResult;
+      error?: string;
+      executionTime: number;
+    };
+    crowdworksScraping: {
+      success: boolean;
+      scrapingResult?: any; // 実装時に詳細型を追加
+      error?: string;
+      executionTime: number;
+    };
+  };
+  executionTime: number;
+  timestamp: string;
+}
+
+// Lambda エラーレスポンス型
+export interface LambdaErrorResponse {
+  message: string;
+  error: string;
+  requestId: string;
+  timestamp: string;
+}
+
+// 旧形式レスポンス型（後方互換性維持）
+export interface LegacyScheduledExecutionResponse {
   status: 'success' | 'error' | 'partial';
   executionId: string;
   timestamp: string;
@@ -158,4 +205,18 @@ export class AppError extends Error {
     super(message);
     this.name = 'AppError';
   }
+}
+
+// CrowdWorks認証情報
+export interface CrowdWorksCredentials {
+  email: string;
+  password: string;
+}
+
+// CrowdWorksログイン結果
+export interface CrowdWorksLoginResult {
+  success: boolean;
+  isLoggedIn: boolean;
+  error?: string;
+  executionTime: number;
 }
