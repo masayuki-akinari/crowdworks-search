@@ -27,6 +27,7 @@ interface ScoredJob extends AnalysisResult {
     skill_analysis?: string;
     proposal_amount?: number; // 提案金額
     estimated_finish_date?: string; // 完了予定日（ISO文字列）
+    delivery_estimate?: string; // 納期見込み
 }
 
 // .envからAPIキー取得
@@ -385,11 +386,11 @@ async function calculateRecommendationScores(minHourlyRate: number = 3000): Prom
             const allDetailsData = [...ecDetailsData, ...webDetailsData];
             const originalJob = getOriginalJobData(job.jobId, allDetailsData);
 
-            const { greeting, questions } = await proposalLimiter.execute(() =>
+            const { delivery_estimate, questions } = await proposalLimiter.execute(() =>
                 generateProposalContent(job, originalJob)
             );
 
-            job.proposal_greeting = greeting;
+            job.delivery_estimate = delivery_estimate;
             job.specification_questions = questions;
 
             proposalCount++;
@@ -538,8 +539,8 @@ function generateRecommendationMarkdown(jobs: ScoredJob[]): string {
 }
 
 // GPTで提案用挨拶文と仕様質問を生成する関数
-async function generateProposalContent(job: AnalysisResult, originalJob: any): Promise<{ greeting: string; questions: string }> {
-    const prompt = `以下のクラウドワークス案件に応募する際の戦略的な挨拶文と仕様確認質問を作成してください。
+async function generateProposalContent(job: AnalysisResult, originalJob: any): Promise<{ delivery_estimate: string; questions: string }> {
+    const prompt = `以下のクラウドワークス案件について、下記2点を日本語で出力してください。
 
 【案件情報】
 タイトル: ${job.title}
@@ -548,25 +549,13 @@ async function generateProposalContent(job: AnalysisResult, originalJob: any): P
 見積工数: ${job.工数_見積もり}
 難易度: ${job.難易度}
 
-【要求内容】
-1. **挨拶文**: プロフェッショナルで親しみやすい、簡潔な自己紹介（2-3行）
-2. **仕様確認質問**: 案件を確実に成功させるための具体的な質問（3-5個）
-
-【挨拶文のポイント】
-- 経験と専門性をアピール
-- 案件への真剣な取り組み姿勢を示す
-- クライアントの課題解決に焦点
-
-【質問のポイント】
-- 曖昧な部分の明確化
-- 成果物の具体的な要求仕様
-- 納期やコミュニケーション方法
-- 想定される課題やリスクの確認
-- 成功基準の明確化
+【出力内容】
+1. 納期見込み（何日で納品できそうか。根拠も1文で）
+2. 仕様確認質問（案件を確実に成功させるための具体的な質問を3-5個）
 
 【出力フォーマット】
-挨拶文:
-<挨拶文をここに>
+納期見込み:
+<例: 10日（要件定義・修正対応含む）>
 
 質問:
 1. <質問1>
@@ -579,26 +568,26 @@ async function generateProposalContent(job: AnalysisResult, originalJob: any): P
         const res = await openai.chat.completions.create({
             model: 'gpt-4o',
             messages: [
-                { role: 'system', content: 'あなたは経験豊富なフリーランサーで、クラウドワークス案件への効果的な提案文作成の専門家です。クライアントの信頼を得て、案件を受注するための戦略的なコミュニケーションに長けています。' },
+                { role: 'system', content: 'あなたはクラウドワークス案件の納期見積もりと仕様確認の専門家です。' },
                 { role: 'user', content: prompt }
             ],
-            max_tokens: 800,
-            temperature: 0.3,
+            max_tokens: 600,
+            temperature: 0.2,
         });
 
         const text = res.choices[0]?.message?.content || '';
 
-        // 挨拶文と質問を分離
-        const greetingMatch = text.match(/挨拶文[:：]\s*([\s\S]*?)(?=質問[:：]|$)/);
+        // 納期見込みと質問を分離
+        const deliveryMatch = text.match(/納期見込み[:：]\s*([\s\S]*?)(?=質問[:：]|$)/);
         const questionsMatch = text.match(/質問[:：]\s*([\s\S]*)/);
 
-        const greeting = greetingMatch?.[1]?.trim() || '';
+        const delivery_estimate = deliveryMatch?.[1]?.trim() || '';
         const questions = questionsMatch?.[1]?.trim() || '';
 
-        return { greeting, questions };
+        return { delivery_estimate, questions };
     } catch (e) {
-        console.error(`❌ 提案文生成エラー (${job.jobId}):`, e);
-        return { greeting: '', questions: '' };
+        console.error(`❌ 納期・質問生成エラー (${job.jobId}):`, e);
+        return { delivery_estimate: '', questions: '' };
     }
 }
 
