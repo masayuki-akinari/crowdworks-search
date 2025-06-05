@@ -64,7 +64,10 @@
         "handler:lambda": "npx ts-node -r dotenv/config -e \"import('./src/lambda/handler').then(m => m.lambdaHandler({source: 'manual', 'detail-type': 'test', detail: {}}, {} as any).then(r => console.log(JSON.stringify(r, null, 2))))\"",
         "handler": "npx ts-node -r dotenv/config src/lambda/handler.ts",
         "h": "npm run handler",
-        "handler:help": "npm run handler --"
+        "handler:help": "npm run handler --",
+        "full-analysis": "npm run handler full-analysis",
+        "full-analysis:quick": "npm run handler full-analysis 20",
+        "full-analysis:detailed": "npm run handler full-analysis 100"
     },
     "keywords": [
         "crowdworks",

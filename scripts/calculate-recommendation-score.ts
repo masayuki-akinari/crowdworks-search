@@ -201,18 +201,20 @@ async function calculateRecommendationScores(): Promise<void> {
     let ecDetailsData: any[] = [];
     let webDetailsData: any[] = [];
 
+    // EC詳細データの読み込み
     try {
-        ecDetailsData = JSON.parse(readFileSync('details-ec.json', 'utf8'));
+        ecDetailsData = JSON.parse(readFileSync('output/details-ec.json', 'utf8'));
         console.log(`📂 EC詳細データ: ${ecDetailsData.length}件読み込み`);
-    } catch (e) {
-        console.log('⚠️ EC詳細データファイルが見つかりません');
+    } catch (error) {
+        console.log(`⚠️ EC詳細データの読み込みに失敗: ${error}`);
     }
 
+    // Web製品詳細データの読み込み
     try {
-        webDetailsData = JSON.parse(readFileSync('details-web_products.json', 'utf8'));
+        webDetailsData = JSON.parse(readFileSync('output/details-web_products.json', 'utf8'));
         console.log(`📂 Web製品詳細データ: ${webDetailsData.length}件読み込み`);
-    } catch (e) {
-        console.log('⚠️ Web製品詳細データファイルが見つかりません');
+    } catch (error) {
+        console.log(`⚠️ Web製品詳細データの読み込みに失敗: ${error}`);
     }
 
     // ECカテゴリの分析データ読み込み
@@ -395,15 +397,14 @@ async function calculateRecommendationScores(): Promise<void> {
         console.log('');
     });
 
-    // ファイルに保存
-    const outputFileName = 'jobs-with-recommendation-scores.json';
-    writeFileSync(outputFileName, JSON.stringify(sortedJobs, null, 2), 'utf8');
-    console.log(`\n💾 結果を保存: ${outputFileName} (${sortedJobs.length}件)`);
+    // 結果をJSONファイルに保存
+    writeFileSync('output/jobs-with-recommendation-scores.json', JSON.stringify(sortedJobs, null, 2), 'utf8');
+    console.log(`💾 結果を保存: output/jobs-with-recommendation-scores.json (${sortedJobs.length}件)`);
 
-    // Markdownファイルも生成
+    // Markdownファイルに保存
     const markdown = generateRecommendationMarkdown(sortedJobs.slice(0, 30)); // TOP30
-    writeFileSync('recommended-jobs-top30.md', markdown, 'utf8');
-    console.log(`📄 Markdownファイルを保存: recommended-jobs-top30.md`);
+    writeFileSync('output/recommended-jobs-top30.md', markdown, 'utf8');
+    console.log(`📄 Markdownファイルを保存: output/recommended-jobs-top30.md`);
 }
 
 // Markdown生成関数

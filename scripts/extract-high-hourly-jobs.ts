@@ -49,18 +49,20 @@ function extractHighHourlyJobs(): void {
     let ecDetailsData: any[] = [];
     let webDetailsData: any[] = [];
 
+    // EC詳細データの読み込み
     try {
-        ecDetailsData = JSON.parse(readFileSync('details-ec.json', 'utf8'));
+        ecDetailsData = JSON.parse(readFileSync('output/details-ec.json', 'utf8'));
         console.log(`📂 EC詳細データ: ${ecDetailsData.length}件読み込み`);
-    } catch (e) {
-        console.log('⚠️ EC詳細データファイルが見つかりません');
+    } catch (error) {
+        console.log(`⚠️ EC詳細データの読み込みに失敗: ${error}`);
     }
 
+    // Web製品詳細データの読み込み
     try {
-        webDetailsData = JSON.parse(readFileSync('details-web_products.json', 'utf8'));
+        webDetailsData = JSON.parse(readFileSync('output/details-web_products.json', 'utf8'));
         console.log(`📂 Web製品詳細データ: ${webDetailsData.length}件読み込み`);
-    } catch (e) {
-        console.log('⚠️ Web製品詳細データファイルが見つかりません');
+    } catch (error) {
+        console.log(`⚠️ Web製品詳細データの読み込みに失敗: ${error}`);
     }
 
     // ECカテゴリの分析データ読み込み
@@ -115,10 +117,10 @@ function extractHighHourlyJobs(): void {
 
     // Markdownファイル生成
     const markdown = generateMarkdown(sortedJobs, minHourlyRate);
-    const outputFileName = `high-hourly-jobs-3000+.md`;
+    const outputFileName = `output/high-hourly-jobs-3000+.md`;
 
     writeFileSync(outputFileName, markdown, 'utf8');
-    console.log(`\n💾 Markdownファイルを保存: ${outputFileName}`);
+    console.log(`💾 Markdownファイルを保存: ${outputFileName}`);
     console.log(`📊 抽出件数: ${sortedJobs.length}件`);
     console.log(`💰 最高時給: ${Math.max(...sortedJobs.map(j => j.hourly_rate_numeric)).toLocaleString()}円`);
 }

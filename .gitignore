@@ -56,4 +56,12 @@ temp/
 .dockerignore
 
 # Husky
-.husky/_/ 
+.husky/_/
+
+# Output files (scraped data, analysis results, reports)
+output/
+*.json
+*.md
+!README.md
+!package.json
+!tsconfig.json 

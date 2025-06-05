@@ -1523,7 +1523,7 @@ export async function scrapeCrowdWorksJobsByCategoryWithDetails(params: {
   jobDetails: CrowdWorksJobDetail[];
 }> {
   let browser: Browser | null = null;
-  const detailsFile = `details-${params.category}.json`;
+  const detailsFile = `output/details-${params.category}.json`;
   let existingDetails: CrowdWorksJobDetail[] = [];
   let existingDetailIds = new Set<string>();
 
@@ -3075,7 +3075,7 @@ export async function executeFullAnalysisWorkflow(params?: {
         console.log(`\n🔍 ${category} カテゴリ AI分析中...`);
 
         // 詳細ファイルの存在確認
-        const detailsFile = `details-${category}.json`;
+        const detailsFile = `output/details-${category}.json`;
         const { exec } = require('child_process');
         const fs = require('fs');
 
@@ -3086,7 +3086,7 @@ export async function executeFullAnalysisWorkflow(params?: {
 
         // AI分析実行
         await new Promise<void>((resolve, reject) => {
-          const analysisCmd = `npx ts-node scripts/analyze-details.ts ${detailsFile} analyzed-${category}.json`;
+          const analysisCmd = `npx ts-node scripts/analyze-details.ts ${detailsFile} output/analyzed-${category}.json`;
           exec(analysisCmd, (error: any, _stdout: string, _stderr: string) => {
             if (error) {
               console.log(`❌ ${category} AI分析エラー:`, error.message);
@@ -3096,7 +3096,7 @@ export async function executeFullAnalysisWorkflow(params?: {
 
               // 分析結果の件数を取得
               try {
-                const analyzedData = JSON.parse(fs.readFileSync(`analyzed-${category}.json`, 'utf8'));
+                const analyzedData = JSON.parse(fs.readFileSync(`output/analyzed-${category}.json`, 'utf8'));
                 analysisResults[category] = analyzedData.length;
                 console.log(`📊 ${category}: ${analyzedData.length}件分析完了`);
               } catch (parseError) {
@@ -3161,7 +3161,7 @@ export async function executeFullAnalysisWorkflow(params?: {
     // ステップ5: 統合レポート生成
     console.log('\n📋 ステップ5: 統合レポート生成中...');
     const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
-    const reportFile = `crowdworks-analysis-report-${timestamp}.md`;
+    const reportFile = `output/crowdworks-analysis-report-${timestamp}.md`;
 
     try {
       const reportContent = await generateComprehensiveReport({
@@ -3270,8 +3270,8 @@ async function generateComprehensiveReport(data: {
   // 高時給案件があれば追加
   try {
     const fs = require('fs');
-    if (fs.existsSync('high-hourly-jobs-3000+.md')) {
-      const highHourlyContent = fs.readFileSync('high-hourly-jobs-3000+.md', 'utf8');
+    if (fs.existsSync('output/high-hourly-jobs-3000+.md')) {
+      const highHourlyContent = fs.readFileSync('output/high-hourly-jobs-3000+.md', 'utf8');
       report += `\n## 💰 高時給案件抽出結果\n\n`;
       report += highHourlyContent.split('\n').slice(10).join('\n'); // ヘッダー部分をスキップ
     }
@@ -3282,8 +3282,8 @@ async function generateComprehensiveReport(data: {
   // おすすめ案件があれば追加
   try {
     const fs = require('fs');
-    if (fs.existsSync('recommended-jobs-top30.md')) {
-      const recommendedContent = fs.readFileSync('recommended-jobs-top30.md', 'utf8');
+    if (fs.existsSync('output/recommended-jobs-top30.md')) {
+      const recommendedContent = fs.readFileSync('output/recommended-jobs-top30.md', 'utf8');
       report += `\n## ⭐ おすすめ案件TOP30\n\n`;
       report += recommendedContent.split('\n').slice(5).join('\n'); // ヘッダー部分をスキップ
     }
