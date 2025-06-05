@@ -1,6 +1,6 @@
 require('dotenv').config();
 
-import { readFileSync, writeFileSync } from 'fs';
+import { readFileSync, writeFileSync, existsSync, unlinkSync } from 'fs';
 import { OpenAI } from 'openai';
 
 // 型定義
@@ -373,15 +373,14 @@ async function calculateRecommendationScores(minHourlyRate: number = 3000): Prom
         console.log(`有効案件: ${validJobs.length}件 / 全${sortedJobs.length}件`);
     }
 
-    // 時給3000円以上の案件に提案文生成を追加
-    const highValueJobs = sortedJobs.filter(job => job.hourly_rate_numeric >= PROPOSAL_GENERATION_MIN_HOURLY_RATE);
-    console.log(`\n🤖 時給${PROPOSAL_GENERATION_MIN_HOURLY_RATE}円以上の案件の提案文生成中（最大3件並列）...`);
-    console.log(`対象案件: ${highValueJobs.length}件`);
+    // 全案件に提案文生成を追加
+    console.log(`\n🤖 全案件の提案文生成中（最大3件並列）...`);
+    console.log(`対象案件: ${sortedJobs.length}件`);
 
     const proposalLimiter = new ConcurrencyLimiter(3); // 提案文生成は3件並列
     let proposalCount = 0;
 
-    const proposalPromises = highValueJobs.map(async (job, index) => {
+    const proposalPromises = sortedJobs.map(async (job, index) => {
         try {
             const allDetailsData = [...ecDetailsData, ...webDetailsData];
             const originalJob = getOriginalJobData(job.jobId, allDetailsData);
@@ -395,17 +394,17 @@ async function calculateRecommendationScores(minHourlyRate: number = 3000): Prom
             job.specification_questions = questions;
 
             proposalCount++;
-            console.log(`✅ [${proposalCount}/${highValueJobs.length}] ${job.original_title?.substring(0, 40)}... 提案文生成完了`);
+            console.log(`✅ [${proposalCount}/${sortedJobs.length}] ${job.original_title?.substring(0, 40)}... 提案文生成完了`);
 
             return { success: true, index };
         } catch (error) {
-            console.error(`❌ [${index + 1}/${highValueJobs.length}] 提案文生成エラー:`, error);
+            console.error(`❌ [${index + 1}/${sortedJobs.length}] 提案文生成エラー:`, error);
             return { success: false, index };
         }
     });
 
     await Promise.allSettled(proposalPromises);
-    console.log(`🎯 提案文生成完了: ${proposalCount}/${highValueJobs.length}件成功`);
+    console.log(`🎯 提案文生成完了: ${proposalCount}/${sortedJobs.length}件成功`);
 
     // 結果表示（上位20件）
     console.log(`\n🏆 Webエンジニア向けおすすめ案件ランキング TOP20:\n`);
@@ -428,34 +427,80 @@ async function calculateRecommendationScores(minHourlyRate: number = 3000): Prom
             console.log(`   🧠 適性: ${job.skill_analysis.substring(0, 80)}...`);
         }
 
-        // 時給3000円以上なら提案文と質問も表示
-        if (job.hourly_rate_numeric >= PROPOSAL_GENERATION_MIN_HOURLY_RATE && job.proposal_greeting && job.specification_questions) {
+        // 提案文があれば表示
+        if (job.proposal_greeting) {
             console.log(`   💬 提案文: ${job.proposal_greeting.substring(0, 60)}...`);
         }
         console.log('');
     });
 
-    // 結果をJSONファイルに保存
-    writeFileSync('output/jobs-with-recommendation-scores.json', JSON.stringify(sortedJobs, null, 2), 'utf8');
-    console.log(`💾 結果を保存: output/jobs-with-recommendation-scores.json (${sortedJobs.length}件)`);
+    // 時給3000円以上の案件のみをMarkdownに出力
+    const highValueJobs = sortedJobs.filter(job => job.hourly_rate_numeric >= PROPOSAL_GENERATION_MIN_HOURLY_RATE);
 
-    // Markdownファイルに保存
-    const markdown = generateRecommendationMarkdown(sortedJobs.slice(0, 30)); // TOP30
-    writeFileSync('output/recommended-jobs-top30.md', markdown, 'utf8');
-    console.log(`📄 Markdownファイルを保存: output/recommended-jobs-top30.md`);
+    // 時給分布の詳細を表示
+    console.log(`\n📊 時給分布の詳細:`);
+    const hourlyRateDistribution = sortedJobs.reduce((acc, job) => {
+        const rate = job.hourly_rate_numeric;
+        if (rate >= 4000) acc['4000円以上']++;
+        else if (rate >= 3500) acc['3500円以上']++;
+        else if (rate >= 3000) acc['3000円以上']++;
+        else if (rate >= 2500) acc['2500円以上']++;
+        else if (rate >= 2000) acc['2000円以上']++;
+        else if (rate >= 1500) acc['1500円以上']++;
+        else if (rate >= 1000) acc['1000円以上']++;
+        else acc['1000円未満']++;
+        return acc;
+    }, {
+        '4000円以上': 0,
+        '3500円以上': 0,
+        '3000円以上': 0,
+        '2500円以上': 0,
+        '2000円以上': 0,
+        '1500円以上': 0,
+        '1000円以上': 0,
+        '1000円未満': 0
+    });
+
+    Object.entries(hourlyRateDistribution).forEach(([range, count]) => {
+        if (count > 0) {
+            console.log(`   ${range}: ${count}件`);
+        }
+    });
+
+    console.log(`\n📝 時給${PROPOSAL_GENERATION_MIN_HOURLY_RATE}円以上の案件: ${highValueJobs.length}件をMarkdownに出力`);
+
+    const markdown = generateRecommendationMarkdown(highValueJobs, sortedJobs.length); // 時給3000円以上のみ表示
+    writeFileSync('output/recommended-jobs.md', markdown, 'utf8');
+    console.log(`📄 Markdownファイルを保存: output/recommended-jobs.md`);
+
+    // 一時的に生成されたJSONファイルを削除
+    try {
+        const tempFiles = [
+            'output/jobs-with-recommendation-scores.json',
+            'output/high-hourly-jobs-3000+.md'
+        ];
+        tempFiles.forEach(file => {
+            if (existsSync(file)) {
+                unlinkSync(file);
+                console.log(`🗑️ 一時ファイルを削除: ${file}`);
+            }
+        });
+    } catch (error) {
+        console.warn('⚠️ 一時ファイル削除中にエラー:', error);
+    }
 }
 
 // Markdown生成関数
-function generateRecommendationMarkdown(jobs: ScoredJob[]): string {
+function generateRecommendationMarkdown(jobs: ScoredJob[], totalJobs?: number): string {
     const currentDate = new Date().toISOString().split('T')[0];
 
-    let markdown = `# Webエンジニア向けおすすめ案件ランキング TOP30\n\n`;
+    let markdown = `# Webエンジニア向けおすすめ案件ランキング（時給${PROPOSAL_GENERATION_MIN_HOURLY_RATE}円以上）\n\n`;
     markdown += `> 生成日: ${currentDate}  \n`;
     markdown += `> 評価基準: 係数システム（時給×${EVALUATION_COEFFICIENTS.HOURLY} + 工数×${EVALUATION_COEFFICIENTS.WORKLOAD} + スキル適性×${EVALUATION_COEFFICIENTS.SKILL_FIT}）  \n`;
     markdown += `> 対象者: 高スキルWebエンジニア（デザインスキル低め）  \n`;
     markdown += `> 最高得点: ${Math.max(...jobs.map(j => j.recommendation_score))}点  \n`;
-    markdown += `> 対象件数: ${jobs.length}件\n`;
-    markdown += `> 💬 時給${PROPOSAL_GENERATION_MIN_HOURLY_RATE}円以上の案件には戦略的提案文・質問を生成\n\n`;
+    markdown += `> 表示件数: ${jobs.length}件（全${totalJobs || jobs.length}件から時給${PROPOSAL_GENERATION_MIN_HOURLY_RATE}円以上を抽出）\n`;
+    markdown += `> 💬 すべての案件に戦略的提案文・質問・金額・納期を生成\n\n`;
 
     markdown += `## 👨‍💻 対象スキルプロフィール\n\n`;
     markdown += `- **高スキルWebエンジニア**（フロントエンド・バックエンド両方）\n`;
@@ -496,13 +541,19 @@ function generateRecommendationMarkdown(jobs: ScoredJob[]): string {
 
     jobs.forEach((job, index) => {
         const rank = index + 1;
-        markdown += `### ${rank}位: ${job.recommendation_score}点 - [${job.original_title}](${job.link})\n\n`;
+        markdown += `### ${rank}位: ${job.recommendation_score}点 - ${job.original_title || job.title}\n\n`;
         markdown += `**💰 想定時給:** ${job.hourly_rate_numeric.toLocaleString()}円  \n`;
         markdown += `**🎯 難易度:** ${job.難易度}  \n`;
         markdown += `**⏰ 見積工数:** ${job.工数_見積もり}  \n`;
         markdown += `**🧠 スキル適性:** ${job.skill_fit_score?.toFixed(1)}点/10点  \n`;
         markdown += `**🏷️ カテゴリ:** ${job.category}  \n`;
         markdown += `**🔗 案件URL:** ${job.link}\n\n`;
+
+        // 提案金額と納期を追加
+        if (job.proposal_amount && job.delivery_estimate) {
+            markdown += `**💴 提案金額:** ${job.proposal_amount.toLocaleString()}円  \n`;
+            markdown += `**📅 納期提案:** ${job.delivery_estimate}  \n\n`;
+        }
 
         markdown += `**📝 分析概要:**  \n`;
         markdown += `${job.gpt_summary}\n\n`;
@@ -512,8 +563,8 @@ function generateRecommendationMarkdown(jobs: ScoredJob[]): string {
             markdown += `${job.skill_analysis}\n\n`;
         }
 
-        // 時給3000円以上なら提案文と質問も追加
-        if (job.hourly_rate_numeric >= PROPOSAL_GENERATION_MIN_HOURLY_RATE && job.proposal_greeting && job.specification_questions) {
+        // 提案文と質問を追加
+        if (job.proposal_greeting && job.specification_questions) {
             markdown += `**💬 戦略的提案文:**  \n`;
             markdown += `${job.proposal_greeting}\n\n`;
 
@@ -524,14 +575,17 @@ function generateRecommendationMarkdown(jobs: ScoredJob[]): string {
         markdown += `---\n\n`;
     });
 
-    // 3000円以上の案件を表形式で出力
-    const filtered = jobs.filter(j => j.hourly_rate_numeric >= PROPOSAL_GENERATION_MIN_HOURLY_RATE);
-    if (filtered.length > 0) {
-        markdown += `\n## 💴 ${PROPOSAL_GENERATION_MIN_HOURLY_RATE}円以上の案件一覧\n\n`;
-        markdown += `| タイトル | 提案金額 | 完了予定日 | 紹介文 |\n`;
+    // 案件一覧を表形式で出力
+    if (jobs.length > 0) {
+        markdown += `\n## 💴 案件一覧（時給${PROPOSAL_GENERATION_MIN_HOURLY_RATE}円以上）\n\n`;
+        markdown += `| 案件名 | 提案金額 | 納期提案 | 提案文（抜粋） |\n`;
         markdown += `|---|---|---|---|\n`;
-        filtered.forEach(job => {
-            markdown += `| [${job.original_title}](${job.link}) | ${job.proposal_amount?.toLocaleString()}円 | ${job.estimated_finish_date} | ${(job.proposal_greeting || '').replace(/\n/g, ' ')} |\n`;
+        jobs.forEach(job => {
+            const title = job.original_title || job.title || '案件名不明';
+            const amount = job.proposal_amount?.toLocaleString() || '要相談';
+            const delivery = job.delivery_estimate || '要相談';
+            const greeting = (job.proposal_greeting || '').replace(/\n/g, ' ').substring(0, 80);
+            markdown += `| [${title}](${job.link}) | ${amount}円 | ${delivery} | ${greeting}... |\n`;
         });
         markdown += `\n`;
     }
