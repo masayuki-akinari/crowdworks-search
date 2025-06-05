@@ -1210,8 +1210,8 @@ export async function testCrowdWorksCategories(): Promise<{
 
     console.log('✅ ブラウザ準備完了！カテゴリスクレイピング開始...');
 
-    // 指定カテゴリをスクレイピング（ECとWeb制作）
-    const categories = ['ec', 'web_products'];
+    // 指定カテゴリをスクレイピング（ECとWeb制作、開発系）
+    const categories = ['ec', 'web_products', 'development', 'software_development'];
     const results: { [category: string]: ScrapingResult } = {};
 
     for (const category of categories) {
@@ -2528,7 +2528,7 @@ export async function debugCategoryScrapingTest(): Promise<{
     });
 
     // カテゴリテスト実行
-    const categories = ['ec', 'web_products'];
+    const categories = ['ec', 'web_products', 'development', 'software_development'];
     const categoryResults: { [category: string]: ScrapingResult } = {};
 
     for (const category of categories) {
