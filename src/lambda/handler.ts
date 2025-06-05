@@ -134,104 +134,147 @@ async function scrapeCrowdWorksJobsByCategory(
       'app_development': 'https://crowdworks.jp/public/jobs/category/227'
     };
 
-    const url = categoryUrls[category];
-    if (!url) {
+    const baseUrl = categoryUrls[category];
+    if (!baseUrl) {
       throw new Error(`未知のカテゴリ: ${category}`);
     }
 
     console.log(`📂 カテゴリ「${category}」のスクレイピング開始 (最大${maxJobs}件)`);
-    await page.goto(url, { waitUntil: 'networkidle' });
 
     const jobs: CrowdWorksJob[] = [];
-
-    // ページネーション対応
     let currentPage = 1;
-    while (jobs.length < maxJobs) {
-      console.log(`📄 ページ ${currentPage} を処理中...`);
+    let consecutiveEmptyPages = 0;
+    const maxConsecutiveEmptyPages = 3;
+    const maxPages = Math.ceil(maxJobs / 20) + 2; // 1ページ約20件として計算し、余裕をもたせる
 
-      // 案件リストの取得
-      const pageJobs = await page.evaluate((category) => {
-        const jobElements = document.querySelectorAll('.job_list_table tbody tr');
-        const pageJobs: any[] = [];
+    while (jobs.length < maxJobs && currentPage <= maxPages && consecutiveEmptyPages < maxConsecutiveEmptyPages) {
+      const pageUrl = currentPage === 1 ? baseUrl : `${baseUrl}?page=${currentPage}`;
+      console.log(`📄 ページ ${currentPage} を処理中: ${pageUrl}`);
 
-        jobElements.forEach((element: Element) => {
-          try {
-            const titleLink = element.querySelector('.job_title a');
-            const title = titleLink?.textContent?.trim() || '';
-            const url = titleLink?.getAttribute('href') || '';
-            const id = url.match(/\/jobs\/(\d+)/)?.[1] || '';
+      try {
+        await page.goto(pageUrl, { waitUntil: 'networkidle', timeout: 30000 });
+        await page.waitForTimeout(2000); // ページロード後の待機
 
-            if (!id || !title) return;
+        // 案件リストの取得
+        const pageJobs = await page.evaluate((category) => {
+          // 実際のページ構造に合わせたセレクタ
+          const jobElements = document.querySelectorAll('ul li, .job_list_item, .job-list-item');
+          const pageJobs: any[] = [];
 
-            const description = element.querySelector('.job_summary')?.textContent?.trim() || '';
-            const budgetText = element.querySelector('.job_price')?.textContent?.trim() || '';
-            const clientName = element.querySelector('.client_name')?.textContent?.trim() || '';
-            const applicantsText = element.querySelector('.entry_count')?.textContent?.trim() || '0';
+          jobElements.forEach((element: Element) => {
+            try {
+              // タイトルとURLの取得（複数のセレクタパターンを試行）
+              let titleLink = element.querySelector('h3 a, .job_title a, a[href*="/jobs/"]');
 
-            // 予算の解析
-            let budgetAmount = 0;
-            let budgetType: 'fixed' | 'hourly' | 'unknown' = 'unknown';
-            if (budgetText.includes('円')) {
-              const match = budgetText.match(/([0-9,]+)/);
-              if (match?.[1]) {
-                budgetAmount = parseInt(match[1].replace(/,/g, ''));
-                budgetType = budgetText.includes('時給') ? 'hourly' : 'fixed';
+              if (!titleLink) {
+                // hrefにjobsが含まれるリンクを探す
+                const allLinks = element.querySelectorAll('a');
+                for (const link of Array.from(allLinks)) {
+                  if (link.getAttribute('href')?.includes('/jobs/')) {
+                    titleLink = link;
+                    break;
+                  }
+                }
               }
+
+              if (!titleLink) return;
+
+              const title = titleLink.textContent?.trim() || '';
+              const url = titleLink.getAttribute('href') || '';
+              const id = url.match(/\/jobs\/(\d+)/)?.[1] || '';
+
+              if (!id || !title) return;
+
+              // 説明文の取得
+              const description = element.querySelector('p, .job_summary, .description')?.textContent?.trim() || '';
+
+              // 予算情報の取得（複数パターン）
+              let budgetText = '';
+              const budgetSelectors = ['.job_price', '.price', '.budget', '[class*="price"]', '[class*="budget"]'];
+              for (const selector of budgetSelectors) {
+                const budgetElement = element.querySelector(selector);
+                if (budgetElement) {
+                  budgetText = budgetElement.textContent?.trim() || '';
+                  break;
+                }
+              }
+
+              // クライアント名の取得
+              let clientName = '';
+              const clientSelectors = ['.client_name', '.client', '[class*="client"]'];
+              for (const selector of clientSelectors) {
+                const clientElement = element.querySelector(selector);
+                if (clientElement) {
+                  clientName = clientElement.textContent?.trim() || '';
+                  break;
+                }
+              }
+
+              // 応募数の取得
+              let applicantsText = '0';
+              const applicantSelectors = ['.entry_count', '.applicants', '[class*="entry"]', '[class*="applicant"]'];
+              for (const selector of applicantSelectors) {
+                const applicantElement = element.querySelector(selector);
+                if (applicantElement) {
+                  applicantsText = applicantElement.textContent?.trim() || '0';
+                  break;
+                }
+              }
+
+              // 予算の解析
+              let budgetAmount = 0;
+              let budgetType: 'fixed' | 'hourly' | 'unknown' = 'unknown';
+              if (budgetText.includes('円')) {
+                const match = budgetText.match(/([0-9,]+)/);
+                if (match?.[1]) {
+                  budgetAmount = parseInt(match[1].replace(/,/g, ''));
+                  budgetType = budgetText.includes('時給') ? 'hourly' : 'fixed';
+                }
+              }
+
+              pageJobs.push({
+                id,
+                title,
+                description,
+                url: `https://crowdworks.jp${url}`,
+                budget: {
+                  type: budgetType,
+                  amount: budgetAmount,
+                  currency: 'JPY'
+                },
+                category,
+                tags: [],
+                client: {
+                  name: clientName,
+                  rating: 0,
+                  reviewCount: 0
+                },
+                postedAt: new Date().toISOString(),
+                applicants: parseInt(applicantsText.match(/\d+/)?.[0] || '0'),
+                scrapedAt: new Date().toISOString()
+              });
+            } catch (error) {
+              console.log('案件要素の解析エラー:', error);
             }
+          });
 
-            pageJobs.push({
-              id,
-              title,
-              description,
-              url: `https://crowdworks.jp${url}`,
-              budget: {
-                type: budgetType,
-                amount: budgetAmount,
-                currency: 'JPY'
-              },
-              category,
-              tags: [],
-              client: {
-                name: clientName,
-                rating: 0,
-                reviewCount: 0
-              },
-              postedAt: new Date().toISOString(),
-              applicants: parseInt(applicantsText.match(/\d+/)?.[0] || '0'),
-              scrapedAt: new Date().toISOString()
-            });
-          } catch (error) {
-            console.log('案件要素の解析エラー:', error);
-          }
-        });
+          return pageJobs;
+        }, category);
 
-        return pageJobs;
-      }, category);
-
-      jobs.push(...pageJobs);
-      console.log(`✅ ページ ${currentPage}: ${pageJobs.length}件取得 (累計: ${jobs.length}件)`);
-
-      // 必要な件数に達したら終了
-      if (jobs.length >= maxJobs) {
-        break;
-      }
-
-      // 次のページに移動
-      const nextPageExists = await page.evaluate(() => {
-        const nextButton = document.querySelector('.pager .next a');
-        if (nextButton) {
-          (nextButton as HTMLAnchorElement).click();
-          return true;
+        if (pageJobs.length === 0) {
+          consecutiveEmptyPages++;
+          console.log(`⚠️ ページ ${currentPage}: 案件が見つかりません (連続${consecutiveEmptyPages}回目)`);
+        } else {
+          consecutiveEmptyPages = 0;
+          jobs.push(...pageJobs);
+          console.log(`✅ ページ ${currentPage}: ${pageJobs.length}件取得 (累計: ${jobs.length}件)`);
         }
-        return false;
-      });
 
-      if (!nextPageExists) {
-        console.log('📄 最後のページに到達');
-        break;
+      } catch (error) {
+        console.log(`❌ ページ ${currentPage} 処理エラー:`, error instanceof Error ? error.message : String(error));
+        consecutiveEmptyPages++;
       }
 
-      await page.waitForTimeout(2000);
       currentPage++;
     }
 
