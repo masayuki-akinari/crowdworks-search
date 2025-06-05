@@ -25,6 +25,8 @@ interface ScoredJob extends AnalysisResult {
     proposal_greeting?: string;
     specification_questions?: string;
     skill_analysis?: string;
+    proposal_amount?: number; // 提案金額
+    estimated_finish_date?: string; // 完了予定日（ISO文字列）
 }
 
 // .envからAPIキー取得
@@ -96,14 +98,15 @@ function parseDifficultyScore(difficultyString: string): number {
     return 5; // 不明な場合はデフォルト
 }
 
-// ===== 評価係数設定 =====
-// 係数を変更することで評価の重要度を調整できます
+// 評価係数の定数
 const EVALUATION_COEFFICIENTS = {
-    HOURLY: 2.0,          // 時給重視度
-    WORKLOAD: 1.0,        // 工数バランス重視度
-    SKILL_FIT: 2.5        // スキル適性重視度
-    // 難易度は表示のみで点数計算から除外
+    HOURLY: 2.0,        // 時給の重み
+    WORKLOAD: 1.0,      // 工数の重み  
+    SKILL_FIT: 3.0      // スキル適性の重み
 };
+
+// 提案文生成対象の最低時給基準
+const PROPOSAL_GENERATION_MIN_HOURLY_RATE = 3000; // 円
 
 // おすすめ点数を計算する関数（スキル適性考慮版）
 function calculateRecommendationScore(
@@ -192,7 +195,7 @@ class ConcurrencyLimiter {
 }
 
 // メイン処理（非同期版）
-async function calculateRecommendationScores(): Promise<void> {
+async function calculateRecommendationScores(minHourlyRate: number = 3000): Promise<void> {
     console.log('🔄 おすすめ点数計算を開始...');
 
     const scoredJobs: ScoredJob[] = [];
@@ -246,6 +249,12 @@ async function calculateRecommendationScores(): Promise<void> {
 
             const originalJob = getOriginalJobData(item.jobId, ecDetailsData);
 
+            const proposalAmount = Math.round(workloadHours * minHourlyRate);
+            const finishDays = Math.ceil((workloadHours / 6) * 2);
+            const finishDate = new Date();
+            finishDate.setDate(finishDate.getDate() + finishDays);
+            const estimatedFinishDate = finishDate.toISOString().split('T')[0];
+
             scoredJobs.push({
                 ...item,
                 category: 'EC',
@@ -255,7 +264,9 @@ async function calculateRecommendationScores(): Promise<void> {
                 skill_fit_score: skillFitScore,
                 recommendation_score: recommendationScore,
                 link: `https://crowdworks.jp/public/jobs/${item.jobId}`,
-                original_title: originalJob?.title || item.title
+                original_title: originalJob?.title || item.title,
+                proposal_amount: proposalAmount,
+                estimated_finish_date: estimatedFinishDate
             });
         });
         console.log(`✅ ECカテゴリ: ${ecAnalyzedData.length}件処理完了`);
@@ -274,6 +285,12 @@ async function calculateRecommendationScores(): Promise<void> {
 
             const originalJob = getOriginalJobData(item.jobId, webDetailsData);
 
+            const proposalAmount = Math.round(workloadHours * minHourlyRate);
+            const finishDays = Math.ceil((workloadHours / 6) * 2);
+            const finishDate = new Date();
+            finishDate.setDate(finishDate.getDate() + finishDays);
+            const estimatedFinishDate = finishDate.toISOString().split('T')[0];
+
             scoredJobs.push({
                 ...item,
                 category: 'Web製品',
@@ -283,7 +300,9 @@ async function calculateRecommendationScores(): Promise<void> {
                 skill_fit_score: skillFitScore,
                 recommendation_score: recommendationScore,
                 link: `https://crowdworks.jp/public/jobs/${item.jobId}`,
-                original_title: originalJob?.title || item.title
+                original_title: originalJob?.title || item.title,
+                proposal_amount: proposalAmount,
+                estimated_finish_date: estimatedFinishDate
             });
         });
         console.log(`✅ Web製品カテゴリ: ${webAnalyzedData.length}件処理完了`);
@@ -353,14 +372,15 @@ async function calculateRecommendationScores(): Promise<void> {
         console.log(`有効案件: ${validJobs.length}件 / 全${sortedJobs.length}件`);
     }
 
-    // TOP10案件に提案文生成を追加
-    const top10Jobs = sortedJobs.slice(0, 10);
-    console.log(`\n🤖 TOP10案件の提案文生成中（最大3件並列）...`);
+    // 時給3000円以上の案件に提案文生成を追加
+    const highValueJobs = sortedJobs.filter(job => job.hourly_rate_numeric >= PROPOSAL_GENERATION_MIN_HOURLY_RATE);
+    console.log(`\n🤖 時給${PROPOSAL_GENERATION_MIN_HOURLY_RATE}円以上の案件の提案文生成中（最大3件並列）...`);
+    console.log(`対象案件: ${highValueJobs.length}件`);
 
     const proposalLimiter = new ConcurrencyLimiter(3); // 提案文生成は3件並列
     let proposalCount = 0;
 
-    const proposalPromises = top10Jobs.map(async (job, index) => {
+    const proposalPromises = highValueJobs.map(async (job, index) => {
         try {
             const allDetailsData = [...ecDetailsData, ...webDetailsData];
             const originalJob = getOriginalJobData(job.jobId, allDetailsData);
@@ -373,17 +393,17 @@ async function calculateRecommendationScores(): Promise<void> {
             job.specification_questions = questions;
 
             proposalCount++;
-            console.log(`✅ [${proposalCount}/10] ${job.original_title?.substring(0, 40)}... 提案文生成完了`);
+            console.log(`✅ [${proposalCount}/${highValueJobs.length}] ${job.original_title?.substring(0, 40)}... 提案文生成完了`);
 
             return { success: true, index };
         } catch (error) {
-            console.error(`❌ [${index + 1}/10] 提案文生成エラー:`, error);
+            console.error(`❌ [${index + 1}/${highValueJobs.length}] 提案文生成エラー:`, error);
             return { success: false, index };
         }
     });
 
     await Promise.allSettled(proposalPromises);
-    console.log(`🎯 提案文生成完了: ${proposalCount}/10件成功`);
+    console.log(`🎯 提案文生成完了: ${proposalCount}/${highValueJobs.length}件成功`);
 
     // 結果表示（上位20件）
     console.log(`\n🏆 Webエンジニア向けおすすめ案件ランキング TOP20:\n`);
@@ -406,8 +426,8 @@ async function calculateRecommendationScores(): Promise<void> {
             console.log(`   🧠 適性: ${job.skill_analysis.substring(0, 80)}...`);
         }
 
-        // TOP10なら提案文も表示
-        if (rank <= 10 && job.proposal_greeting) {
+        // 時給3000円以上なら提案文と質問も追加
+        if (job.hourly_rate_numeric >= PROPOSAL_GENERATION_MIN_HOURLY_RATE && job.proposal_greeting && job.specification_questions) {
             console.log(`   💬 提案文: ${job.proposal_greeting.substring(0, 60)}...`);
         }
         console.log('');
@@ -433,7 +453,7 @@ function generateRecommendationMarkdown(jobs: ScoredJob[]): string {
     markdown += `> 対象者: 高スキルWebエンジニア（デザインスキル低め）  \n`;
     markdown += `> 最高得点: ${Math.max(...jobs.map(j => j.recommendation_score))}点  \n`;
     markdown += `> 対象件数: ${jobs.length}件\n`;
-    markdown += `> 💬 TOP10案件には戦略的提案文・質問を生成\n\n`;
+    markdown += `> 💬 時給${PROPOSAL_GENERATION_MIN_HOURLY_RATE}円以上の案件には戦略的提案文・質問を生成\n\n`;
 
     markdown += `## 👨‍💻 対象スキルプロフィール\n\n`;
     markdown += `- **高スキルWebエンジニア**（フロントエンド・バックエンド両方）\n`;
@@ -490,8 +510,8 @@ function generateRecommendationMarkdown(jobs: ScoredJob[]): string {
             markdown += `${job.skill_analysis}\n\n`;
         }
 
-        // TOP10なら提案文と質問も追加
-        if (rank <= 10 && job.proposal_greeting && job.specification_questions) {
+        // 時給3000円以上なら提案文と質問も追加
+        if (job.hourly_rate_numeric >= PROPOSAL_GENERATION_MIN_HOURLY_RATE && job.proposal_greeting && job.specification_questions) {
             markdown += `**💬 戦略的提案文:**  \n`;
             markdown += `${job.proposal_greeting}\n\n`;
 
@@ -501,6 +521,18 @@ function generateRecommendationMarkdown(jobs: ScoredJob[]): string {
 
         markdown += `---\n\n`;
     });
+
+    // 3000円以上の案件を表形式で出力
+    const filtered = jobs.filter(j => j.hourly_rate_numeric >= PROPOSAL_GENERATION_MIN_HOURLY_RATE);
+    if (filtered.length > 0) {
+        markdown += `\n## 💴 ${PROPOSAL_GENERATION_MIN_HOURLY_RATE}円以上の案件一覧\n\n`;
+        markdown += `| タイトル | 提案金額 | 完了予定日 | 紹介文 |\n`;
+        markdown += `|---|---|---|---|\n`;
+        filtered.forEach(job => {
+            markdown += `| [${job.original_title}](${job.link}) | ${job.proposal_amount?.toLocaleString()}円 | ${job.estimated_finish_date} | ${(job.proposal_greeting || '').replace(/\n/g, ' ')} |\n`;
+        });
+        markdown += `\n`;
+    }
 
     return markdown;
 }
@@ -628,6 +660,7 @@ async function analyzeSkillFit(job: AnalysisResult, originalJob: any): Promise<{
 }
 
 // 実行
+const minHourlyRateArg = process.argv[2] ? parseInt(process.argv[2], 10) : 3000;
 (async () => {
-    await calculateRecommendationScores();
+    await calculateRecommendationScores(minHourlyRateArg);
 })(); 
