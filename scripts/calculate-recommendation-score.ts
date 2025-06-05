@@ -217,10 +217,27 @@ async function calculateRecommendationScores(): Promise<void> {
         console.log(`⚠️ Web製品詳細データの読み込みに失敗: ${error}`);
     }
 
+    // AI分析済みデータの読み込み（オプション）
+    let ecAnalyzedData: any[] = [];
+    let webAnalyzedData: any[] = [];
+
+    try {
+        ecAnalyzedData = JSON.parse(readFileSync('output/analyzed-ec.json', 'utf8'));
+        console.log(`🧠 EC AI分析データ: ${ecAnalyzedData.length}件読み込み`);
+    } catch (error) {
+        console.log(`⚠️ ECカテゴリファイルが見つかりません: analyzed-ec.json`);
+    }
+
+    try {
+        webAnalyzedData = JSON.parse(readFileSync('output/analyzed-web_products.json', 'utf8'));
+        console.log(`🧠 Web製品 AI分析データ: ${webAnalyzedData.length}件読み込み`);
+    } catch (error) {
+        console.log(`⚠️ Web製品カテゴリファイルが見つかりません: analyzed-web_products.json`);
+    }
+
     // ECカテゴリの分析データ読み込み
     try {
-        const ecData: AnalysisResult[] = JSON.parse(readFileSync('analyzed-ec.json', 'utf8'));
-        ecData.forEach(item => {
+        ecAnalyzedData.forEach(item => {
             const hourlyRate = parseHourlyRate(item.想定時給);
             const workloadHours = parseWorkloadHours(item.工数_見積もり);
             const difficultyScore = parseDifficultyScore(item.難易度);
@@ -241,15 +258,14 @@ async function calculateRecommendationScores(): Promise<void> {
                 original_title: originalJob?.title || item.title
             });
         });
-        console.log(`✅ ECカテゴリ: ${ecData.length}件処理完了`);
+        console.log(`✅ ECカテゴリ: ${ecAnalyzedData.length}件処理完了`);
     } catch (e) {
         console.log('⚠️ ECカテゴリファイルが見つかりません: analyzed-ec.json');
     }
 
     // Web製品カテゴリの分析データ読み込み
     try {
-        const webData: AnalysisResult[] = JSON.parse(readFileSync('analyzed-web_products.json', 'utf8'));
-        webData.forEach(item => {
+        webAnalyzedData.forEach(item => {
             const hourlyRate = parseHourlyRate(item.想定時給);
             const workloadHours = parseWorkloadHours(item.工数_見積もり);
             const difficultyScore = parseDifficultyScore(item.難易度);
@@ -270,7 +286,7 @@ async function calculateRecommendationScores(): Promise<void> {
                 original_title: originalJob?.title || item.title
             });
         });
-        console.log(`✅ Web製品カテゴリ: ${webData.length}件処理完了`);
+        console.log(`✅ Web製品カテゴリ: ${webAnalyzedData.length}件処理完了`);
     } catch (e) {
         console.log('⚠️ Web製品カテゴリファイルが見つかりません: analyzed-web_products.json');
     }

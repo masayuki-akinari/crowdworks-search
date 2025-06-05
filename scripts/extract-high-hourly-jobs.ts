@@ -65,10 +65,27 @@ function extractHighHourlyJobs(): void {
         console.log(`⚠️ Web製品詳細データの読み込みに失敗: ${error}`);
     }
 
+    // AI分析済みデータの読み込み（オプション）
+    let ecAnalyzedData: any[] = [];
+    let webAnalyzedData: any[] = [];
+
+    try {
+        ecAnalyzedData = JSON.parse(readFileSync('output/analyzed-ec.json', 'utf8'));
+        console.log(`🧠 EC AI分析データ: ${ecAnalyzedData.length}件読み込み`);
+    } catch (error) {
+        console.log(`⚠️ ECカテゴリファイルが見つかりません: analyzed-ec.json`);
+    }
+
+    try {
+        webAnalyzedData = JSON.parse(readFileSync('output/analyzed-web_products.json', 'utf8'));
+        console.log(`🧠 Web製品 AI分析データ: ${webAnalyzedData.length}件読み込み`);
+    } catch (error) {
+        console.log(`⚠️ Web製品カテゴリファイルが見つかりません: analyzed-web_products.json`);
+    }
+
     // ECカテゴリの分析データ読み込み
     try {
-        const ecData: AnalysisResult[] = JSON.parse(readFileSync('analyzed-ec.json', 'utf8'));
-        ecData.forEach(item => {
+        ecAnalyzedData.forEach(item => {
             const hourlyRate = parseHourlyRate(item.想定時給);
             if (hourlyRate >= minHourlyRate) {
                 const originalJob = getOriginalJobData(item.jobId, ecDetailsData);
@@ -81,15 +98,14 @@ function extractHighHourlyJobs(): void {
                 });
             }
         });
-        console.log(`✅ ECカテゴリ: ${ecData.length}件中 ${ecData.filter(item => parseHourlyRate(item.想定時給) >= minHourlyRate).length}件が対象`);
+        console.log(`✅ ECカテゴリ: ${ecAnalyzedData.length}件中 ${ecAnalyzedData.filter(item => parseHourlyRate(item.想定時給) >= minHourlyRate).length}件が対象`);
     } catch (e) {
         console.log('⚠️ ECカテゴリファイルが見つかりません: analyzed-ec.json');
     }
 
     // Web製品カテゴリの分析データ読み込み
     try {
-        const webData: AnalysisResult[] = JSON.parse(readFileSync('analyzed-web_products.json', 'utf8'));
-        webData.forEach(item => {
+        webAnalyzedData.forEach(item => {
             const hourlyRate = parseHourlyRate(item.想定時給);
             if (hourlyRate >= minHourlyRate) {
                 const originalJob = getOriginalJobData(item.jobId, webDetailsData);
@@ -102,7 +118,7 @@ function extractHighHourlyJobs(): void {
                 });
             }
         });
-        console.log(`✅ Web製品カテゴリ: ${webData.length}件中 ${webData.filter(item => parseHourlyRate(item.想定時給) >= minHourlyRate).length}件が対象`);
+        console.log(`✅ Web製品カテゴリ: ${webAnalyzedData.length}件中 ${webAnalyzedData.filter(item => parseHourlyRate(item.想定時給) >= minHourlyRate).length}件が対象`);
     } catch (e) {
         console.log('⚠️ Web製品カテゴリファイルが見つかりません: analyzed-web_products.json');
     }
