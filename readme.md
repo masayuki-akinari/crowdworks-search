@@ -195,6 +195,8 @@ const browser = await chromium.launch({
 - [📊 監視・アラート](./docs/03_monitoring.md)
 - [🛡️ セキュリティ](./docs/04_security.md)
 
+デプロイガイドでは、前提条件の確認から `cdk bootstrap`、`npm run cdk:deploy` の実行までを整理しています。さらに、CI/CDパイプラインによる自動デプロイ方法も紹介しています。
+
 ## 🎯 現在の開発状況
 
 ### ✅ 完了済み
