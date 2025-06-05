@@ -12,6 +12,15 @@ on:
   pull_request:
     branches: [ main, develop ]
   workflow_dispatch: # 手動実行を許可
+    inputs:
+      environment:
+        description: 'Environment to deploy to'
+        required: true
+        default: 'staging'
+        type: choice
+        options:
+        - staging
+        - production
 
 env:
   NODE_VERSION: '18'
@@ -217,32 +226,27 @@ jobs:
           docker run --rm crowdworks-searcher:test node --version
           echo "✅ Docker container test passed"
 
-  # Staging環境デプロイ（developブランチ）
-  # 注意: AWS認証情報の設定が必要です！
-  # GitHubリポジトリの Settings > Secrets and variables > Actions で以下を設定してください：
-  # - STAGING_AWS_ACCESS_KEY_ID
-  # - STAGING_AWS_SECRET_ACCESS_KEY
-  # - STAGING_OPENAI_API_KEY
-  # - STAGING_CROWDWORKS_EMAIL
-  # - STAGING_CROWDWORKS_PASSWORD
+  # Staging デプロイ（developブランチ）
   deploy-staging:
     name: Deploy to Staging
     runs-on: ubuntu-latest
     timeout-minutes: 30
     needs: [unit-tests, build-test, cdk-synth, docker-build]
-    # AWS認証情報が設定されるまで一時的に無効化
-    if: false # github.ref == 'refs/heads/develop' && github.event_name == 'push'
+    if: github.ref == 'refs/heads/develop' && github.event_name == 'push'
+    environment:
+      name: staging
+      url: https://staging.example.com
     
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Configure AWS credentials
+      - name: Configure AWS credentials (Staging)
         uses: aws-actions/configure-aws-credentials@v4
         with:
-          aws-access-key-id: ${{ secrets.STAGING_AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.STAGING_AWS_SECRET_ACCESS_KEY }}
+          role-to-assume: ${{ secrets.STAGING_AWS_ROLE_ARN }}
           aws-region: ${{ env.AWS_REGION }}
+          role-session-name: GitHubActions-Staging
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -259,83 +263,156 @@ jobs:
           name: build-artifacts
           path: dist/
 
-      - name: Deploy to staging
+      - name: Login to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Deploy to Staging with CDK
         run: |
-          npm run cdk:deploy -- --context stage=staging --require-approval never
+          npm run cdk:deploy:staging
         env:
           STAGE: staging
-          OPENAI_API_KEY: ${{ secrets.STAGING_OPENAI_API_KEY }}
-          CROWDWORKS_EMAIL: ${{ secrets.STAGING_CROWDWORKS_EMAIL }}
-          CROWDWORKS_PASSWORD: ${{ secrets.STAGING_CROWDWORKS_PASSWORD }}
-
-      - name: Post-deployment smoke test
-        run: |
-          echo "🧪 Running staging smoke tests..."
-          # 基本的なAWSリソース存在確認
-          aws lambda list-functions --query 'Functions[?contains(FunctionName, `CrowdWorks`)]' --output table
-          echo "✅ Staging deployment verification completed"
-
-  # Production環境デプロイ（mainブランチ + タグ）
-  # 注意: AWS認証情報の設定が必要です！
-  # GitHubリポジトリの Settings > Secrets and variables > Actions で以下を設定してください：
-  # - PRODUCTION_AWS_ACCESS_KEY_ID
-  # - PRODUCTION_AWS_SECRET_ACCESS_KEY
-  # - PRODUCTION_OPENAI_API_KEY
-  # - PRODUCTION_CROWDWORKS_EMAIL
-  # - PRODUCTION_CROWDWORKS_PASSWORD
-  deploy-production:
-    name: Deploy to Production
-    runs-on: ubuntu-latest
-    timeout-minutes: 30
-    needs: [unit-tests, build-test, cdk-synth, security-scan]
-    # AWS認証情報が設定されるまで一時的に無効化
-    if: false # github.ref == 'refs/heads/main' && github.event_name == 'push'
-    
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@v4
-        with:
-          aws-access-key-id: ${{ secrets.PRODUCTION_AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.PRODUCTION_AWS_SECRET_ACCESS_KEY }}
-          aws-region: ${{ env.AWS_REGION }}
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: ${{ env.NODE_VERSION }}
-          cache: 'npm'
-
-      - name: Install dependencies
-        run: npm ci
-
-      - name: Download build artifacts
-        uses: actions/download-artifact@v4
-        with:
-          name: build-artifacts
-          path: dist/
-
-      - name: Deploy to production
-        run: |
-          npm run cdk:deploy -- --context stage=production --require-approval never
-        env:
-          STAGE: production
-          OPENAI_API_KEY: ${{ secrets.PRODUCTION_OPENAI_API_KEY }}
-          CROWDWORKS_EMAIL: ${{ secrets.PRODUCTION_CROWDWORKS_EMAIL }}
-          CROWDWORKS_PASSWORD: ${{ secrets.PRODUCTION_CROWDWORKS_PASSWORD }}
+          CDK_DEFAULT_REGION: ${{ env.AWS_REGION }}
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
 
       - name: Post-deployment verification
         run: |
-          echo "🚀 Production deployment completed"
-          echo "Branch: ${{ github.ref }}"
-          echo "Commit: ${{ github.sha }}"
-          echo "Actor: ${{ github.actor }}"
-          
-          # 基本的なヘルスチェック
-          aws lambda list-functions --query 'Functions[?contains(FunctionName, `CrowdWorks`)]' --output table
-          echo "✅ Production deployment verification completed"
+          echo "Verifying staging deployment..."
+          # Lambda関数の存在確認
+          aws lambda get-function --function-name crowdworks-searcher-staging-main
+          echo "✅ Staging deployment verified"
+
+      - name: Slack notification (Staging)
+        if: always()
+        uses: 8398a7/action-slack@v3
+        with:
+          status: ${{ job.status }}
+          channel: '#deployments'
+          fields: repo,message,commit,author,action,eventName,ref,workflow
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+
+  # Production デプロイ（mainブランチ）
+  deploy-production:
+    name: Deploy to Production
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    needs: [unit-tests, build-test, cdk-synth, docker-build]
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    environment:
+      name: production
+      url: https://production.example.com
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials (Production)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.PRODUCTION_AWS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+          role-session-name: GitHubActions-Production
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Download build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: build-artifacts
+          path: dist/
+
+      - name: Login to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Deploy to Production with CDK
+        run: |
+          npm run cdk:deploy:production
+        env:
+          STAGE: production
+          CDK_DEFAULT_REGION: ${{ env.AWS_REGION }}
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+
+      - name: Post-deployment verification
+        run: |
+          echo "Verifying production deployment..."
+          # Lambda関数の存在確認
+          aws lambda get-function --function-name crowdworks-searcher-production-main
+          # CloudWatch Logs確認
+          aws logs describe-log-groups --log-group-name-prefix "/aws/lambda/crowdworks-searcher-production"
+          echo "✅ Production deployment verified"
+
+      - name: Create deployment tag
+        run: |
+          git config --global user.name 'github-actions[bot]'
+          git config --global user.email 'github-actions[bot]@users.noreply.github.com'
+          git tag -a "v$(date +%Y%m%d_%H%M%S)" -m "Production deployment $(date)"
+          git push origin --tags
+
+      - name: Slack notification (Production)
+        if: always()
+        uses: 8398a7/action-slack@v3
+        with:
+          status: ${{ job.status }}
+          channel: '#deployments'
+          fields: repo,message,commit,author,action,eventName,ref,workflow
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+
+  # 手動デプロイ（workflow_dispatch）
+  deploy-manual:
+    name: Manual Deploy
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    if: github.event_name == 'workflow_dispatch'
+    environment: ${{ github.event.inputs.environment }}
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ github.event.inputs.environment == 'production' && secrets.PRODUCTION_AWS_ROLE_ARN || secrets.STAGING_AWS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+          role-session-name: GitHubActions-Manual
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build project
+        run: npm run build
+
+      - name: Login to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Deploy with CDK
+        run: |
+          if [ "${{ github.event.inputs.environment }}" = "production" ]; then
+            npm run cdk:deploy:production
+          else
+            npm run cdk:deploy:staging
+          fi
+        env:
+          STAGE: ${{ github.event.inputs.environment }}
+          CDK_DEFAULT_REGION: ${{ env.AWS_REGION }}
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
 
   # 通知（失敗時のみ）
   notify-failure:

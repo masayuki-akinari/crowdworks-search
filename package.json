@@ -22,6 +22,8 @@
         "cdk:synth": "cdk synth",
         "cdk:deploy": "cdk deploy",
         "cdk:deploy:container": "npm run build && cdk deploy --require-approval never --context useContainerImage=true",
+        "cdk:deploy:staging": "npm run build && cdk deploy --require-approval never --context stage=staging --context useContainerImage=true",
+        "cdk:deploy:production": "npm run build && cdk deploy --require-approval never --context stage=production --context useContainerImage=true",
         "cdk:destroy": "cdk destroy",
         "cdk:diff": "cdk diff",
         "dev": "ts-node src/index.ts",
