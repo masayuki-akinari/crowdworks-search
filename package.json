@@ -38,7 +38,16 @@
         "lambda:test": "curl -XPOST 'http://localhost:9000/2015-03-31/functions/function/invocations' -d '{\"source\":\"test\",\"detail\":{}}'",
         "lambda:local": "npm run docker:build:lambda && npm run docker:run:lambda",
         "precommit": "lint-staged",
-        "security:audit": "npm audit --audit-level=moderate"
+        "security:audit": "npm audit --audit-level=moderate",
+        "scrape:default": "npx ts-node -r dotenv/config -e \"import('./src/lambda/handler').then(m => m.scrapeCrowdWorksJobsByCategoryWithDetails({category: 'ec', maxJobs: 50, maxDetails: 50}).then(r => console.log('✅ デフォルト取得完了:', r.jobs.length, '件一覧,', r.jobDetails.length, '件詳細')))\"",
+        "scrape:both-default": "npx ts-node -r dotenv/config -e \"import('./src/lambda/handler').then(async m => { const ecResult = await m.scrapeCrowdWorksJobsByCategoryWithDetails({category: 'ec', maxJobs: 50, maxDetails: 50}); console.log('EC:', ecResult.jobs.length, '件一覧,', ecResult.jobDetails.length, '件詳細'); const webResult = await m.scrapeCrowdWorksJobsByCategoryWithDetails({category: 'web_products', maxJobs: 50, maxDetails: 50}); console.log('Web:', webResult.jobs.length, '件一覧,', webResult.jobDetails.length, '件詳細'); console.log('✅ 両カテゴリ取得完了 合計:', ecResult.jobs.length + webResult.jobs.length, '件一覧,', ecResult.jobDetails.length + webResult.jobDetails.length, '件詳細'); })\"",
+        "analyze:ec": "npx ts-node scripts/analyze-details.ts details-ec.json analyzed-ec.json",
+        "analyze:web": "npx ts-node scripts/analyze-details.ts details-web_products.json analyzed-web_products.json",
+        "sort:high": "npx ts-node scripts/sort-by-hourly-rate.ts high",
+        "sort:low": "npx ts-node scripts/sort-by-hourly-rate.ts low",
+        "sort:default": "npx ts-node scripts/sort-by-hourly-rate.ts",
+        "extract:high-hourly": "npx ts-node scripts/extract-high-hourly-jobs.ts",
+        "recommend": "npx ts-node scripts/calculate-recommendation-score.ts"
     },
     "keywords": [
         "crowdworks",
@@ -65,7 +74,7 @@
         "aws-sdk": "^2.1691.0",
         "constructs": "^10.3.0",
         "dotenv": "^16.5.0",
-        "openai": "^4.20.0",
+        "openai": "^4.50.0",
         "playwright": "^1.48.2",
         "source-map-support": "^0.5.21",
         "typescript": "^5.6.3",

@@ -1517,56 +1517,49 @@ export async function scrapeCrowdWorksJobDetail(page: Page, jobUrl: string): Pro
 export async function scrapeCrowdWorksJobsByCategoryWithDetails(params: {
   category: string;
   maxJobs: number;
-  maxDetails?: number; // 詳細取得する案件の最大数（デフォルト3件）
+  maxDetails?: number;
 }): Promise<{
   jobs: CrowdWorksJob[];
   jobDetails: CrowdWorksJobDetail[];
 }> {
   let browser: Browser | null = null;
+  const detailsFile = `details-${params.category}.json`;
+  let existingDetails: CrowdWorksJobDetail[] = [];
+  let existingDetailIds = new Set<string>();
+
+  // 既存ファイル読み込み
+  try {
+    const fileData = await readFileAsync(detailsFile);
+    if (fileData) {
+      existingDetails = JSON.parse(fileData);
+      existingDetailIds = new Set(existingDetails.map((d) => d.jobId));
+      console.log(`📂 既存詳細データ: ${existingDetails.length}件`);
+    }
+  } catch (e) {
+    console.log('⚠️ 既存詳細ファイルなし or 読み込み失敗');
+  }
 
   try {
     console.log(`🔍 カテゴリ「${params.category}」の案件と詳細スクレイピング開始...`);
-
-    // Browserインスタンス作成
-    browser = await chromium.launch({
-      headless: true,
-      args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage']
-    });
-
-    const context = await browser.newContext({
-      userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36'
-    });
-
+    browser = await chromium.launch({ headless: true, args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage'] });
+    const context = await browser.newContext({ userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36' });
     const page = await context.newPage();
-
-    // 案件一覧を取得
     const scrapingResult = await scrapeCrowdWorksJobsByCategory(page, params.category, params.maxJobs);
-
     if (!scrapingResult.success || scrapingResult.jobs.length === 0) {
-      return {
-        jobs: [],
-        jobDetails: []
-      };
+      return { jobs: [], jobDetails: [] };
     }
-
     const jobs = scrapingResult.jobs;
-    const jobDetails: CrowdWorksJobDetail[] = [];
-
-    // 詳細取得する案件数を決定
     const maxDetailsCount = params.maxDetails ?? 3;
-    const detailTargets = jobs.slice(0, maxDetailsCount);
-
-    console.log(`📋 ${jobs.length} 件の案件から ${detailTargets.length} 件の詳細を取得します`);
-
-    // 各案件の詳細を取得
+    // 未取得IDのみ抽出
+    const detailTargets = jobs.filter(j => !existingDetailIds.has(j.id)).slice(0, maxDetailsCount);
+    console.log(`📋 ${jobs.length}件中、未取得詳細: ${detailTargets.length}件`);
+    const jobDetails: CrowdWorksJobDetail[] = [];
     for (let i = 0; i < detailTargets.length; i++) {
-      const job = detailTargets[i]!; // slice結果なので必ず存在
+      const job = detailTargets[i]!;
       try {
         console.log(`📄 案件詳細取得中 (${i + 1}/${detailTargets.length}): ${job.title}`);
         const detail = await scrapeCrowdWorksJobDetail(page, job.url);
         jobDetails.push(detail);
-
-        // リクエスト間隔を空ける
         if (i < detailTargets.length - 1) {
           await page.waitForTimeout(2000);
         }
@@ -1575,22 +1568,18 @@ export async function scrapeCrowdWorksJobsByCategoryWithDetails(params: {
         continue;
       }
     }
-
-    console.log(`🎉 カテゴリ「${params.category}」スクレイピング完了: ${jobs.length}件の案件, ${jobDetails.length}件の詳細`);
-
-    return {
-      jobs,
-      jobDetails
-    };
-
+    // 既存+新規で重複排除して保存
+    const mergedDetails = [...existingDetails, ...jobDetails].reduce((acc, cur) => {
+      if (!acc.find(d => d.jobId === cur.jobId)) acc.push(cur);
+      return acc;
+    }, [] as CrowdWorksJobDetail[]);
+    await writeFileAsync(detailsFile, JSON.stringify(mergedDetails, null, 2));
+    console.log(`💾 詳細データ保存: ${detailsFile} (${mergedDetails.length}件)`);
+    return { jobs, jobDetails: mergedDetails };
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : String(error);
     console.error(`❌ カテゴリ詳細スクレイピングエラー:`, errorMessage);
-
-    return {
-      jobs: [],
-      jobDetails: []
-    };
+    return { jobs: [], jobDetails: [] };
   } finally {
     if (browser) {
       await browser.close();
@@ -2812,4 +2801,15 @@ export async function debugCategoryScrapingWithFileOutput(params: {
       }
     }
   }
+}
+
+// ファイル読み込み用ユーティリティ
+async function readFileAsync(filePath: string): Promise<string | null> {
+  return new Promise((resolve) => {
+    const fs = require('fs');
+    fs.readFile(filePath, 'utf8', (err: any, data: string) => {
+      if (err) resolve(null);
+      else resolve(data);
+    });
+  });
 }
