@@ -258,3 +258,6 @@ MIT License - 詳細は [LICENSE](./LICENSE) ファイルを参照
 ---
 
 **⚡ 次のアクション**: [実装計画書](./docs/05_implementation_plan.md) で詳細な開発ロードマップを確認してください。
+
+npm run full-analysis:quick
+とりあえず実行用コマンド

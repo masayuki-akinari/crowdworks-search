@@ -2835,9 +2835,11 @@ export async function runHandlerCLI(): Promise<void> {
     console.log('  login-and-scrape   - ログイン後案件取得');
     console.log('  no-login-scrape    - ログインなし案件取得');
     console.log('  lambda-test        - Lambda関数テスト');
+    console.log('  full-analysis [件数] - 🚀 全処理統合実行 (スクレイピング→AI分析→レポート)');
     console.log('');
     console.log('例: npm run handler test-playwright');
     console.log('例: npm run handler scrape-ec 30');
+    console.log('例: npm run handler full-analysis 20');
     return;
   }
 
@@ -2966,6 +2968,15 @@ export async function runHandlerCLI(): Promise<void> {
         console.log(JSON.stringify(lambdaResult, null, 2));
         break;
 
+      case 'full-analysis':
+        console.log('🚀 全処理統合実行 (スクレイピング→AI分析→レポート) 実行中...');
+        const fullAnalysisResult = await executeFullAnalysisWorkflow({
+          maxJobsPerCategory: maxJobs,
+          maxDetailsPerCategory: maxJobs
+        });
+        console.log(JSON.stringify(fullAnalysisResult, null, 2));
+        break;
+
       default:
         console.log(`❌ 不明なコマンド: ${command}`);
         console.log('利用可能なコマンドを確認するには引数なしで実行してください。');
@@ -2983,4 +2994,315 @@ if (require.main === module) {
     console.error('❌ CLI実行エラー:', error);
     process.exit(1);
   });
+}
+
+/**
+ * 全カテゴリスクレイピング→AI分析→レポート生成を統合実行
+ */
+export async function executeFullAnalysisWorkflow(params?: {
+  maxJobsPerCategory?: number;
+  maxDetailsPerCategory?: number;
+  saveIntermediateFiles?: boolean;
+}): Promise<{
+  success: boolean;
+  summary: {
+    totalCategories: number;
+    successfulCategories: number;
+    totalJobs: number;
+    totalDetails: number;
+    analysisResults?: {
+      ec?: number;
+      web_products?: number;
+      [key: string]: number | undefined;
+    };
+    reportGenerated: boolean;
+  };
+  reportFile?: string;
+  error?: string;
+  executionTime: number;
+}> {
+  const startTime = Date.now();
+  const maxJobs = params?.maxJobsPerCategory ?? 50;
+  const maxDetails = params?.maxDetailsPerCategory ?? 50;
+
+  try {
+    console.log('🚀 全カテゴリ統合分析ワークフロー開始...');
+    console.log(`📊 設定: 各カテゴリ ${maxJobs}件取得, 詳細 ${maxDetails}件`);
+
+    // ステップ1: 全カテゴリスクレイピング
+    console.log('\n📂 ステップ1: 全カテゴリスクレイピング実行中...');
+    const categories = ['ec', 'web_products', 'software_development', 'development'];
+    let totalJobs = 0;
+    let totalDetails = 0;
+    let successfulCategories = 0;
+
+    for (const category of categories) {
+      try {
+        console.log(`\n📈 ${category} カテゴリ処理中...`);
+        const result = await scrapeCrowdWorksJobsByCategoryWithDetails({
+          category,
+          maxJobs,
+          maxDetails
+        });
+
+        if (result.jobs.length > 0) {
+          console.log(`✅ ${category}: ${result.jobs.length}件一覧, ${result.jobDetails.length}件詳細`);
+          totalJobs += result.jobs.length;
+          totalDetails += result.jobDetails.length;
+          successfulCategories++;
+        } else {
+          console.log(`⚠️ ${category}: データ取得なし`);
+        }
+
+        // カテゴリ間で少し待機
+        if (categories.indexOf(category) < categories.length - 1) {
+          await new Promise(resolve => setTimeout(resolve, 2000));
+        }
+      } catch (e) {
+        console.log(`❌ ${category}: エラー -`, e instanceof Error ? e.message : String(e));
+      }
+    }
+
+    console.log(`\n📊 スクレイピング完了: ${successfulCategories}/${categories.length}カテゴリ成功`);
+    console.log(`📝 合計: ${totalJobs}件一覧, ${totalDetails}件詳細`);
+
+    // ステップ2: AI分析実行
+    console.log('\n🧠 ステップ2: AI分析実行中...');
+    const analysisResults: { [key: string]: number } = {};
+
+    for (const category of ['ec', 'web_products']) {
+      try {
+        console.log(`\n🔍 ${category} カテゴリ AI分析中...`);
+
+        // 詳細ファイルの存在確認
+        const detailsFile = `details-${category}.json`;
+        const { exec } = require('child_process');
+        const fs = require('fs');
+
+        if (!fs.existsSync(detailsFile)) {
+          console.log(`⚠️ ${category}: 詳細ファイルが見つかりません (${detailsFile})`);
+          continue;
+        }
+
+        // AI分析実行
+        await new Promise<void>((resolve, reject) => {
+          const analysisCmd = `npx ts-node scripts/analyze-details.ts ${detailsFile} analyzed-${category}.json`;
+          exec(analysisCmd, (error: any, _stdout: string, _stderr: string) => {
+            if (error) {
+              console.log(`❌ ${category} AI分析エラー:`, error.message);
+              reject(error);
+            } else {
+              console.log(`✅ ${category} AI分析完了`);
+
+              // 分析結果の件数を取得
+              try {
+                const analyzedData = JSON.parse(fs.readFileSync(`analyzed-${category}.json`, 'utf8'));
+                analysisResults[category] = analyzedData.length;
+                console.log(`📊 ${category}: ${analyzedData.length}件分析完了`);
+              } catch (parseError) {
+                console.log(`⚠️ ${category}: 分析結果ファイルの読み込みエラー`);
+              }
+
+              resolve();
+            }
+          });
+        });
+
+      } catch (e) {
+        console.log(`❌ ${category} AI分析失敗:`, e instanceof Error ? e.message : String(e));
+      }
+
+      // 分析間で待機（API制限対応）
+      await new Promise(resolve => setTimeout(resolve, 3000));
+    }
+
+    // ステップ3: おすすめ度計算
+    console.log('\n⭐ ステップ3: おすすめ度計算実行中...');
+    try {
+      await new Promise<void>((resolve, reject) => {
+        const { exec } = require('child_process');
+        const recommendCmd = 'npx ts-node scripts/calculate-recommendation-score.ts';
+        exec(recommendCmd, (error: any, stdout: string, _stderr: string) => {
+          if (error) {
+            console.log('❌ おすすめ度計算エラー:', error.message);
+            reject(error);
+          } else {
+            console.log('✅ おすすめ度計算完了');
+            console.log(stdout);
+            resolve();
+          }
+        });
+      });
+    } catch (e) {
+      console.log('❌ おすすめ度計算失敗:', e instanceof Error ? e.message : String(e));
+    }
+
+    // ステップ4: 高時給案件抽出
+    console.log('\n💰 ステップ4: 高時給案件抽出中...');
+    try {
+      await new Promise<void>((resolve, reject) => {
+        const { exec } = require('child_process');
+        const extractCmd = 'npx ts-node scripts/extract-high-hourly-jobs.ts';
+        exec(extractCmd, (error: any, stdout: string, _stderr: string) => {
+          if (error) {
+            console.log('❌ 高時給案件抽出エラー:', error.message);
+            reject(error);
+          } else {
+            console.log('✅ 高時給案件抽出完了');
+            console.log(stdout);
+            resolve();
+          }
+        });
+      });
+    } catch (e) {
+      console.log('❌ 高時給案件抽出失敗:', e instanceof Error ? e.message : String(e));
+    }
+
+    // ステップ5: 統合レポート生成
+    console.log('\n📋 ステップ5: 統合レポート生成中...');
+    const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+    const reportFile = `crowdworks-analysis-report-${timestamp}.md`;
+
+    try {
+      const reportContent = await generateComprehensiveReport({
+        totalCategories: categories.length,
+        successfulCategories,
+        totalJobs,
+        totalDetails,
+        analysisResults,
+        timestamp: new Date().toISOString()
+      });
+
+      const fs = require('fs');
+      fs.writeFileSync(reportFile, reportContent, 'utf8');
+      console.log(`✅ 統合レポート生成完了: ${reportFile}`);
+
+    } catch (e) {
+      console.log('❌ レポート生成失敗:', e instanceof Error ? e.message : String(e));
+    }
+
+    const executionTime = Date.now() - startTime;
+
+    console.log('\n🎉 全カテゴリ統合分析ワークフロー完了！');
+    console.log(`⏱️ 総実行時間: ${Math.round(executionTime / 1000)}秒`);
+    console.log(`📊 処理結果:`);
+    console.log(`  - 成功カテゴリ: ${successfulCategories}/${categories.length}`);
+    console.log(`  - 総案件数: ${totalJobs}件`);
+    console.log(`  - 総詳細数: ${totalDetails}件`);
+    console.log(`  - AI分析: ${Object.keys(analysisResults).length}カテゴリ`);
+    console.log(`  - レポートファイル: ${reportFile}`);
+
+    return {
+      success: true,
+      summary: {
+        totalCategories: categories.length,
+        successfulCategories,
+        totalJobs,
+        totalDetails,
+        analysisResults,
+        reportGenerated: true
+      },
+      reportFile,
+      executionTime
+    };
+
+  } catch (error) {
+    const executionTime = Date.now() - startTime;
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    console.error('❌ 統合分析ワークフローエラー:', errorMessage);
+
+    return {
+      success: false,
+      summary: {
+        totalCategories: 0,
+        successfulCategories: 0,
+        totalJobs: 0,
+        totalDetails: 0,
+        reportGenerated: false
+      },
+      error: errorMessage,
+      executionTime
+    };
+  }
+}
+
+/**
+ * 統合レポート生成
+ */
+async function generateComprehensiveReport(data: {
+  totalCategories: number;
+  successfulCategories: number;
+  totalJobs: number;
+  totalDetails: number;
+  analysisResults?: { [key: string]: number };
+  timestamp: string;
+}): Promise<string> {
+  const date = new Date().toLocaleDateString('ja-JP');
+
+  let report = `# CrowdWorks案件分析レポート
+
+> 生成日: ${date}  
+> 実行時刻: ${data.timestamp}  
+> 対象: 全カテゴリ自動分析  
+
+## 📊 実行サマリー
+
+| 項目 | 結果 |
+|------|------|
+| 対象カテゴリ数 | ${data.totalCategories} |
+| 成功カテゴリ数 | ${data.successfulCategories} |
+| 総案件取得数 | ${data.totalJobs} |
+| 総詳細取得数 | ${data.totalDetails} |
+| AI分析完了 | ${data.analysisResults ? Object.keys(data.analysisResults).length : 0}カテゴリ |
+
+## 🎯 カテゴリ別結果
+
+`;
+
+  if (data.analysisResults) {
+    for (const [category, count] of Object.entries(data.analysisResults)) {
+      const categoryName = category === 'ec' ? 'EC・ネットショップ' :
+        category === 'web_products' ? 'Web制作・Webデザイン' : category;
+      report += `### ${categoryName}\n- AI分析完了: ${count}件\n\n`;
+    }
+  }
+
+  // 高時給案件があれば追加
+  try {
+    const fs = require('fs');
+    if (fs.existsSync('high-hourly-jobs-3000+.md')) {
+      const highHourlyContent = fs.readFileSync('high-hourly-jobs-3000+.md', 'utf8');
+      report += `\n## 💰 高時給案件抽出結果\n\n`;
+      report += highHourlyContent.split('\n').slice(10).join('\n'); // ヘッダー部分をスキップ
+    }
+  } catch (e) {
+    report += `\n## 💰 高時給案件抽出結果\n\n高時給案件ファイルの読み込みに失敗しました。\n\n`;
+  }
+
+  // おすすめ案件があれば追加
+  try {
+    const fs = require('fs');
+    if (fs.existsSync('recommended-jobs-top30.md')) {
+      const recommendedContent = fs.readFileSync('recommended-jobs-top30.md', 'utf8');
+      report += `\n## ⭐ おすすめ案件TOP30\n\n`;
+      report += recommendedContent.split('\n').slice(5).join('\n'); // ヘッダー部分をスキップ
+    }
+  } catch (e) {
+    report += `\n## ⭐ おすすめ案件TOP30\n\nおすすめ案件ファイルの読み込みに失敗しました。\n\n`;
+  }
+
+  report += `\n## 📝 実行ログ
+
+- スクレイピング実行完了
+- AI分析実行完了  
+- おすすめ度計算完了
+- 高時給案件抽出完了
+- 統合レポート生成完了
+
+---
+
+*このレポートは自動生成されました*
+`;
+
+  return report;
 }

@@ -220,3 +220,34 @@ export interface CrowdWorksLoginResult {
   error?: string;
   executionTime: number;
 }
+
+// クラウドワークスカテゴリ型
+export type CrowdWorksCategory =
+  | 'ec'
+  | 'web_products'
+  | 'software_development'
+  | 'development'
+  | 'writing'
+  | 'translation'
+  | 'marketing'
+  | 'system_development'
+  | 'app_development'
+  | 'data_entry'
+  | 'others';
+
+// デフォルト設定定数
+export const DEFAULT_CONFIG = {
+  MAX_JOBS_PER_CATEGORY: 50,
+  MAX_DETAILS_PER_CATEGORY: 50,
+  ALL_CATEGORIES: [
+    'ec',
+    'web_products',
+    'software_development',
+    'development',
+    'writing',
+    'translation',
+    'marketing',
+    'system_development',
+    'app_development'
+  ] as const satisfies readonly CrowdWorksCategory[]
+} as const;
