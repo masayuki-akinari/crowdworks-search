@@ -123,15 +123,15 @@ async function scrapeCrowdWorksJobsByCategory(
 
   try {
     const categoryUrls: { [key: string]: string } = {
-      'ec': 'https://crowdworks.jp/public/jobs/category/34',
-      'web_products': 'https://crowdworks.jp/public/jobs/category/73',
-      'software_development': 'https://crowdworks.jp/public/jobs/category/227',
-      'development': 'https://crowdworks.jp/public/jobs/category/23',
+      'ec': 'https://crowdworks.jp/public/jobs/group/ec',
+      'web_products': 'https://crowdworks.jp/public/jobs/group/web_products',
+      'software_development': 'https://crowdworks.jp/public/jobs/group/software_development',
+      'development': 'https://crowdworks.jp/public/jobs/group/development',
       'writing': 'https://crowdworks.jp/public/jobs/category/141',
       'translation': 'https://crowdworks.jp/public/jobs/category/406',
       'marketing': 'https://crowdworks.jp/public/jobs/category/539',
-      'system_development': 'https://crowdworks.jp/public/jobs/category/23',
-      'app_development': 'https://crowdworks.jp/public/jobs/category/227'
+      'system_development': 'https://crowdworks.jp/public/jobs/group/development',
+      'app_development': 'https://crowdworks.jp/public/jobs/group/software_development'
     };
 
     const baseUrl = categoryUrls[category];

@@ -1,5 +1,10 @@
 # CrowdWorks 自動化システム
 
+## メモ
+とりあえず、指定件数データを取って、ざっくりの時給と、工数と、提案文を自動生成できるようになった
+かかった日数は一日
+とりあえず回せるようにはなったので、調整しながら進める
+
 [![CI/CD Pipeline](https://github.com/masayuki-akinari/crowdworks-search/actions/workflows/ci.yml/badge.svg)](https://github.com/masayuki-akinari/crowdworks-search/actions/workflows/ci.yml)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.6.3-blue.svg)](https://www.typescriptlang.org/)
 [![AWS CDK](https://img.shields.io/badge/AWS%20CDK-2.170.0-orange.svg)](https://aws.amazon.com/cdk/)
