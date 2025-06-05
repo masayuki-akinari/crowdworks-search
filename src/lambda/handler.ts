@@ -2630,3 +2630,186 @@ export async function debugCategoryScrapingTest(): Promise<{
     }
   }
 }
+
+/**
+ * ファイル保存機能付きカテゴリスクレイピングテスト（デバッグ版ベース）
+ */
+export async function debugCategoryScrapingWithFileOutput(params: {
+  categories: string[];
+  maxJobsPerCategory: number;
+  saveToFile?: boolean;
+}): Promise<{
+  success: boolean;
+  steps: string[];
+  categoryResults?: { [category: string]: ScrapingResult };
+  savedFiles?: string[];
+  error?: string;
+  executionTime: number;
+}> {
+  const startTime = Date.now();
+  const steps: string[] = [];
+  const savedFiles: string[] = [];
+  let browser: Browser | null = null;
+
+  try {
+    steps.push('🚀 ファイル保存機能付きカテゴリスクレイピング開始');
+    console.log('🚀 ファイル保存機能付きカテゴリスクレイピング開始...');
+    console.log(`📋 対象カテゴリ: ${params.categories.join(', ')}`);
+    console.log(`📊 カテゴリ毎最大案件数: ${params.maxJobsPerCategory}`);
+    console.log(`💾 ファイル保存: ${params.saveToFile ? '有効' : '無効'}`);
+
+    // ブラウザ起動
+    steps.push('🌐 ブラウザ起動中');
+    browser = await chromium.launch({
+      headless: true,
+      args: [
+        '--no-sandbox',
+        '--disable-setuid-sandbox',
+        '--disable-dev-shm-usage',
+        '--disable-gpu',
+        '--disable-software-rasterizer'
+      ]
+    });
+
+    steps.push('✅ ブラウザ起動完了');
+
+    // コンテキスト作成
+    steps.push('📄 コンテキスト作成中');
+    const context = await browser.newContext({
+      userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36'
+    });
+
+    steps.push('✅ コンテキスト作成完了');
+
+    // ページ作成
+    steps.push('📋 ページ作成中');
+    const page = await context.newPage();
+    steps.push('✅ ページ作成完了');
+
+    // カテゴリテスト実行
+    const categoryResults: { [category: string]: ScrapingResult } = {};
+
+    for (const category of params.categories) {
+      steps.push(`📂 カテゴリ「${category}」処理開始`);
+      console.log(`\n📂 カテゴリ「${category}」処理開始...`);
+
+      try {
+        // ページ状態確認
+        const isPageClosed = page.isClosed();
+        if (isPageClosed) {
+          steps.push(`❌ カテゴリ「${category}」: ページが閉じられています`);
+          console.log(`❌ カテゴリ「${category}」: ページが既に閉じられています`);
+          continue;
+        }
+
+        steps.push(`📊 カテゴリ「${category}」: デバッグ版スクレイピング実行中`);
+        const categoryResult = await scrapeCrowdWorksJobsByCategoryDebug(page, category, params.maxJobsPerCategory);
+        categoryResults[category] = categoryResult;
+
+        if (categoryResult.success) {
+          steps.push(`✅ カテゴリ「${category}」完了: ${categoryResult.jobsFound}件`);
+          console.log(`✅ カテゴリ「${category}」完了: ${categoryResult.jobsFound}件`);
+
+          // ファイル保存（オプション）
+          if (params.saveToFile && categoryResult.jobs.length > 0) {
+            const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+            const fileName = `./crowdworks-${category}-jobs-${timestamp}.json`;
+
+            const fileData = {
+              category,
+              scrapedAt: new Date().toISOString(),
+              totalJobs: categoryResult.jobsFound,
+              executionTime: categoryResult.executionTime,
+              jobs: categoryResult.jobs
+            };
+
+            try {
+              await writeFileAsync(fileName, JSON.stringify(fileData, null, 2));
+              savedFiles.push(fileName);
+              steps.push(`💾 ファイル保存完了: ${fileName}`);
+              console.log(`💾 ファイル保存完了: ${fileName}`);
+            } catch (saveError) {
+              steps.push(`❌ ファイル保存エラー: ${saveError}`);
+              console.log(`❌ ファイル保存エラー: ${saveError}`);
+            }
+          }
+        } else {
+          steps.push(`❌ カテゴリ「${category}」失敗: ${categoryResult.error}`);
+          console.log(`❌ カテゴリ「${category}」失敗: ${categoryResult.error}`);
+        }
+
+        // カテゴリ間の待機
+        if (params.categories.indexOf(category) < params.categories.length - 1) {
+          steps.push(`⏳ カテゴリ間待機 (2秒)`);
+          await page.waitForTimeout(2000);
+        }
+
+      } catch (categoryError) {
+        const errorMessage = categoryError instanceof Error ? categoryError.message : String(categoryError);
+        steps.push(`❌ カテゴリ「${category}」エラー: ${errorMessage}`);
+        console.error(`❌ カテゴリ「${category}」エラー:`, errorMessage);
+
+        categoryResults[category] = {
+          success: false,
+          jobsFound: 0,
+          jobs: [],
+          error: errorMessage,
+          executionTime: 0
+        };
+      }
+    }
+
+    // クリーンアップ
+    steps.push('🧹 コンテキスト終了中');
+    await context.close();
+    steps.push('✅ コンテキスト終了完了');
+
+    const executionTime = Date.now() - startTime;
+    steps.push(`🎉 ファイル保存機能付きテスト完了 (${executionTime}ms)`);
+
+    const successCount = Object.values(categoryResults).filter(result => result.success).length;
+    const totalJobs = Object.values(categoryResults).reduce((sum, result) => sum + result.jobsFound, 0);
+
+    console.log(`\n🎯 ファイル保存機能付きカテゴリスクレイピング完了`);
+    console.log(`📊 成功カテゴリ数: ${successCount}/${params.categories.length}`);
+    console.log(`📝 総取得案件数: ${totalJobs}件`);
+    console.log(`💾 保存ファイル数: ${savedFiles.length}件`);
+
+    if (savedFiles.length > 0) {
+      console.log(`📁 保存されたファイル:`);
+      savedFiles.forEach(file => console.log(`   - ${file}`));
+    }
+
+    return {
+      success: successCount > 0,
+      steps,
+      categoryResults,
+      ...(savedFiles.length > 0 ? { savedFiles } : {}),
+      executionTime
+    };
+
+  } catch (error) {
+    const executionTime = Date.now() - startTime;
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    steps.push(`❌ テストエラー: ${errorMessage}`);
+    console.error('❌ ファイル保存機能付きテストエラー:', errorMessage);
+
+    return {
+      success: false,
+      steps,
+      error: errorMessage,
+      executionTime
+    };
+  } finally {
+    if (browser) {
+      try {
+        steps.push('🔒 ブラウザ終了中');
+        await browser.close();
+        steps.push('✅ ブラウザ終了完了');
+      } catch (closeError) {
+        steps.push(`⚠️ ブラウザ終了エラー: ${closeError}`);
+        console.warn('⚠️ ブラウザ終了エラー:', closeError);
+      }
+    }
+  }
+}

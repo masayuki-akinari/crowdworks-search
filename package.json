@@ -16,6 +16,7 @@
         "test:basic": "ts-node -r dotenv/config -e \"import('./src/lambda/handler').then(m => m.testPlaywrightBasic().then(r => console.log(JSON.stringify(r, null, 2))))\"",
         "test:debug": "ts-node -r dotenv/config -e \"import('./src/lambda/handler').then(m => m.debugBrowserLifecycle().then(r => console.log(JSON.stringify(r, null, 2))))\"",
         "test:debug-category": "ts-node -r dotenv/config -e \"import('./src/lambda/handler').then(m => m.debugCategoryScrapingTest().then(r => console.log(JSON.stringify(r, null, 2))))\"",
+        "test:file-output": "ts-node -r dotenv/config -e \"import('./src/lambda/handler').then(m => m.debugCategoryScrapingWithFileOutput({categories: ['ec', 'web_products'], maxJobsPerCategory: 5, saveToFile: true}).then(r => console.log(JSON.stringify(r, null, 2))))\"",
         "test:full": "ts-node -r dotenv/config -e \"import('./src/lambda/handler').then(m => m.loginAndScrapeCategories({categories: ['ec', 'web_products'], maxJobsPerCategory: 10, maxDetailsPerCategory: 3, saveToFile: true}).then(r => console.log(JSON.stringify(r, null, 2))))\"",
         "test:no-login": "ts-node -r dotenv/config -e \"import('./src/lambda/handler').then(m => m.testCategoryScrapingWithoutLogin({categories: ['ec', 'web_products'], maxJobsPerCategory: 10, saveToFile: true}).then(r => console.log(JSON.stringify(r, null, 2))))\"",
         "cdk:synth": "cdk synth",
