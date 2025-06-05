@@ -2813,3 +2813,174 @@ async function readFileAsync(filePath: string): Promise<string | null> {
     });
   });
 }
+
+/**
+ * コマンドライン引数に基づいてhandler関数を実行するためのCLI関数
+ */
+export async function runHandlerCLI(): Promise<void> {
+  const args = process.argv.slice(2);
+
+  if (args.length === 0) {
+    console.log('🎯 利用可能なコマンド:');
+    console.log('  test-playwright    - Playwright基本動作テスト');
+    console.log('  test-login         - CrowdWorksログインテスト');
+    console.log('  test-scraping      - 案件スクレイピングテスト');
+    console.log('  test-categories    - カテゴリ別案件テスト');
+    console.log('  debug-browser      - ブラウザライフサイクルデバッグ');
+    console.log('  debug-category     - カテゴリスクレイピングデバッグ');
+    console.log('  scrape-ec [件数]   - EC案件取得 (デフォルト: 50件)');
+    console.log('  scrape-web [件数]  - Web製品案件取得 (デフォルト: 50件)');
+    console.log('  scrape-design [件数] - デザイン案件取得 (デフォルト: 50件)');
+    console.log('  scrape-all [件数]  - 全カテゴリ案件取得 (デフォルト: 50件)');
+    console.log('  login-and-scrape   - ログイン後案件取得');
+    console.log('  no-login-scrape    - ログインなし案件取得');
+    console.log('  lambda-test        - Lambda関数テスト');
+    console.log('');
+    console.log('例: npm run handler test-playwright');
+    console.log('例: npm run handler scrape-ec 30');
+    return;
+  }
+
+  const command = args[0];
+  const maxJobs = args[1] ? parseInt(args[1]) : 50;
+
+  try {
+    switch (command) {
+      case 'test-playwright':
+        console.log('🚀 Playwright基本動作テスト実行中...');
+        const playwrightResult = await testPlaywrightBasic();
+        console.log(JSON.stringify(playwrightResult, null, 2));
+        break;
+
+      case 'test-login':
+        console.log('🔐 CrowdWorksログインテスト実行中...');
+        const loginResult = await testCrowdWorksLogin();
+        console.log(JSON.stringify(loginResult, null, 2));
+        break;
+
+      case 'test-scraping':
+        console.log('📊 案件スクレイピングテスト実行中...');
+        const scrapingResult = await testCrowdWorksScraping();
+        console.log(JSON.stringify(scrapingResult, null, 2));
+        break;
+
+      case 'test-categories':
+        console.log('📂 カテゴリ別案件テスト実行中...');
+        const categoriesResult = await testCrowdWorksCategories();
+        console.log(JSON.stringify(categoriesResult, null, 2));
+        break;
+
+      case 'debug-browser':
+        console.log('🔍 ブラウザライフサイクルデバッグ実行中...');
+        const browserResult = await debugBrowserLifecycle();
+        console.log(JSON.stringify(browserResult, null, 2));
+        break;
+
+      case 'debug-category':
+        console.log('🛠️ カテゴリスクレイピングデバッグ実行中...');
+        const debugResult = await debugCategoryScrapingTest();
+        console.log(JSON.stringify(debugResult, null, 2));
+        break;
+
+      case 'scrape-ec':
+        console.log(`📈 EC案件取得実行中 (${maxJobs}件)...`);
+        const ecResult = await scrapeCrowdWorksJobsByCategoryWithDetails({
+          category: 'ec',
+          maxJobs,
+          maxDetails: maxJobs
+        });
+        console.log(`✅ EC取得完了: ${ecResult.jobs.length}件一覧, ${ecResult.jobDetails.length}件詳細`);
+        break;
+
+      case 'scrape-web':
+        console.log(`🌐 Web製品案件取得実行中 (${maxJobs}件)...`);
+        const webResult = await scrapeCrowdWorksJobsByCategoryWithDetails({
+          category: 'web_products',
+          maxJobs,
+          maxDetails: maxJobs
+        });
+        console.log(`✅ Web製品取得完了: ${webResult.jobs.length}件一覧, ${webResult.jobDetails.length}件詳細`);
+        break;
+
+      case 'scrape-design':
+        console.log(`🎨 デザイン案件取得実行中 (${maxJobs}件)...`);
+        const designResult = await scrapeCrowdWorksJobsByCategoryWithDetails({
+          category: 'design',
+          maxJobs,
+          maxDetails: maxJobs
+        });
+        console.log(`✅ デザイン取得完了: ${designResult.jobs.length}件一覧, ${designResult.jobDetails.length}件詳細`);
+        break;
+
+      case 'scrape-all':
+        console.log(`🎯 全カテゴリ案件取得実行中 (各${maxJobs}件)...`);
+        const categories = ['ec', 'web_products', 'design', 'writing', 'translation', 'marketing', 'system_development', 'app_development'];
+        let totalJobs = 0;
+        let totalDetails = 0;
+
+        for (const category of categories) {
+          try {
+            const result = await scrapeCrowdWorksJobsByCategoryWithDetails({
+              category,
+              maxJobs,
+              maxDetails: maxJobs
+            });
+            console.log(`✅ ${category}: ${result.jobs.length}件一覧, ${result.jobDetails.length}件詳細`);
+            totalJobs += result.jobs.length;
+            totalDetails += result.jobDetails.length;
+          } catch (e) {
+            console.log(`❌ ${category}: エラー`, e instanceof Error ? e.message : String(e));
+          }
+        }
+        console.log(`✅ 全カテゴリ完了 - 合計: ${totalJobs}件一覧, ${totalDetails}件詳細`);
+        break;
+
+      case 'login-and-scrape':
+        console.log('🔐 ログイン後案件取得実行中...');
+        const loginScrapingResult = await loginAndScrapeCategories({
+          categories: ['ec', 'web_products'],
+          maxJobsPerCategory: maxJobs,
+          maxDetailsPerCategory: maxJobs,
+          saveToFile: true
+        });
+        console.log(JSON.stringify(loginScrapingResult, null, 2));
+        break;
+
+      case 'no-login-scrape':
+        console.log('📊 ログインなし案件取得実行中...');
+        const noLoginResult = await testCategoryScrapingWithoutLogin({
+          categories: ['ec', 'web_products'],
+          maxJobsPerCategory: maxJobs,
+          saveToFile: true
+        });
+        console.log(JSON.stringify(noLoginResult, null, 2));
+        break;
+
+      case 'lambda-test':
+        console.log('⚡ Lambda関数テスト実行中...');
+        const lambdaResult = await lambdaHandler({
+          source: 'manual',
+          'detail-type': 'test',
+          detail: {}
+        }, {} as any);
+        console.log(JSON.stringify(lambdaResult, null, 2));
+        break;
+
+      default:
+        console.log(`❌ 不明なコマンド: ${command}`);
+        console.log('利用可能なコマンドを確認するには引数なしで実行してください。');
+        process.exit(1);
+    }
+  } catch (error) {
+    console.error('❌ 実行エラー:', error instanceof Error ? error.message : String(error));
+    process.exit(1);
+  }
+}
+
+// CLI実行時の処理
+if (require.main === module) {
+  runHandlerCLI().catch(error => {
+    console.error('❌ CLI実行エラー:', error);
+    process.exit(1);
+  });
+}
