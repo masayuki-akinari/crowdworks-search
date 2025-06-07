@@ -1,6 +1,6 @@
 require('dotenv').config();
 
-import { readFileSync, writeFileSync } from 'fs';
+import { readFileSync, writeFileSync, existsSync } from 'fs';
 import { OpenAI } from 'openai';
 import * as path from 'path';
 
@@ -41,6 +41,37 @@ const inputPath = path.resolve(inputFile);
 const outputPath = path.resolve(outputFile);
 
 const details: CrowdWorksJobDetail[] = JSON.parse(readFileSync(inputPath, 'utf8'));
+
+// 既存の分析済みデータをキャッシュとして読み込み
+let existingAnalysis: AnalysisResult[] = [];
+if (existsSync(outputPath)) {
+    try {
+        existingAnalysis = JSON.parse(readFileSync(outputPath, 'utf8'));
+        console.log(`📋 既存の分析済みデータを読み込み: ${existingAnalysis.length}件`);
+    } catch (error) {
+        console.log(`⚠️ 既存データの読み込みに失敗: ${error}`);
+        existingAnalysis = [];
+    }
+} else {
+    console.log(`📝 新規分析ファイルを作成: ${outputPath}`);
+}
+
+// 既存の分析済みjobIdのセットを作成
+const existingJobIds = new Set(existingAnalysis.map(analysis => analysis.jobId));
+
+// 新規分析が必要な案件のみを抽出
+const newDetails = details.filter(detail => !existingJobIds.has(detail.jobId));
+const cacheHitCount = details.length - newDetails.length;
+
+console.log(`📊 キャッシュ状況:`);
+console.log(`   全案件数: ${details.length}件`);
+console.log(`   キャッシュヒット: ${cacheHitCount}件`);
+console.log(`   新規分析対象: ${newDetails.length}件`);
+
+if (newDetails.length === 0) {
+    console.log(`🎉 全案件が既に分析済みです。処理をスキップします。`);
+    process.exit(0);
+}
 
 // 並列実行制御クラス
 class ConcurrencyLimiter {
@@ -112,7 +143,7 @@ async function analyzeDetail(detail: CrowdWorksJobDetail): Promise<AnalysisResul
 - クラウドワークスの案件は玉石混交で、タイトルで指定した価格が案件詳細では嘘だと書かれていたりします
 - 詳細説明を注意深く読み、実際の作業内容と報酬を正確に把握してください
 - タイトルの金額に惑わされず、詳細に書かれた実際の条件から確からしい想定時給を算出してください
-- 「〇〇円スタート」「能力に応じて」などの曖昧な表現にも注意してください
+- "〇〇円スタート"「能力に応じて」などの曖昧な表現にも注意してください
 - 初回は低価格で「継続で単価アップ」という案件は、初回価格を基準に計算してください
 - **時給は必ず1つの具体的な数値で回答してください（例：2500円）。範囲や曖昧な表現は禁止です**
 - **難易度は必ず「簡単」「普通」「難しい」のいずれか1つで回答してください**
@@ -160,29 +191,30 @@ async function analyzeDetail(detail: CrowdWorksJobDetail): Promise<AnalysisResul
 }
 
 (async () => {
-    console.log(`🚀 並列分析開始: ${details.length}件（最大5件並列）`);
+    console.log(`🚀 並列分析開始: ${newDetails.length}件（最大5件並列）`);
     const results: AnalysisResult[] = [];
     let completed = 0;
 
     // 全ての案件を並列で処理開始
-    const promises = details.map(async (detail, index) => {
+    const promises = newDetails.map(async (detail, index) => {
         try {
             const result = await analyzeDetail(detail);
             results.push(result);
             completed++;
-            console.log(`✅ [${completed}/${details.length}] ${detail.title.substring(0, 50)}...`);
+            console.log(`✅ [${completed}/${newDetails.length}] ${detail.title.substring(0, 50)}...`);
 
             // 定期的に中間結果を保存
-            if (completed % 5 === 0 || completed === details.length) {
-                // 結果をjobId順にソートして保存
-                const sortedResults = results.sort((a, b) => a.jobId.localeCompare(b.jobId));
+            if (completed % 5 === 0 || completed === newDetails.length) {
+                // 既存データと新規データをマージ
+                const allResults = [...existingAnalysis, ...results];
+                const sortedResults = allResults.sort((a, b) => a.jobId.localeCompare(b.jobId));
                 writeFileSync(outputPath, JSON.stringify(sortedResults, null, 2), 'utf8');
-                console.log(`💾 中間保存: ${completed}件完了`);
+                console.log(`💾 中間保存: 新規${completed}件 + 既存${existingAnalysis.length}件 = 計${sortedResults.length}件`);
             }
 
             return { success: true, result, index };
         } catch (e) {
-            console.error(`❌ [${index + 1}/${details.length}] ${detail.title.substring(0, 50)}... - エラー:`, e);
+            console.error(`❌ [${index + 1}/${newDetails.length}] ${detail.title.substring(0, 50)}... - エラー:`, e);
             return { success: false, error: e, index };
         }
     });
@@ -195,12 +227,14 @@ async function analyzeDetail(detail: CrowdWorksJobDetail): Promise<AnalysisResul
     const failed = settledResults.length - successful;
 
     console.log(`\n🎯 並列分析完了:`)
-    console.log(`✅ 成功: ${successful}件`);
-    console.log(`❌ 失敗: ${failed}件`);
+    console.log(`✅ 新規分析成功: ${successful}件`);
+    console.log(`❌ 新規分析失敗: ${failed}件`);
+    console.log(`💾 キャッシュから再利用: ${cacheHitCount}件`);
     console.log(`📁 出力ファイル: ${outputPath}`);
 
-    // 最終保存（jobId順でソート）
-    const finalResults = results.sort((a, b) => a.jobId.localeCompare(b.jobId));
+    // 既存データと新規データをマージして最終保存
+    const allResults = [...existingAnalysis, ...results];
+    const finalResults = allResults.sort((a, b) => a.jobId.localeCompare(b.jobId));
     writeFileSync(outputPath, JSON.stringify(finalResults, null, 2), 'utf8');
-    console.log(`💾 最終保存完了: ${finalResults.length}件`);
+    console.log(`💾 最終保存完了: 新規${results.length}件 + 既存${existingAnalysis.length}件 = 計${finalResults.length}件`);
 })(); 
