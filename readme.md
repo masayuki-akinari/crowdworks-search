@@ -11,11 +11,14 @@
 
 ## 📋 概要
 
-CrowdWorksの案件情報を自動収集・AI評価し、高評価案件をメール通知するサーバーレスシステムです。
+CrowdWorksとUpworkの案件情報を自動収集・AI評価し、高時給案件をレポート出力するサーバーレスシステムです。
 
 ### 🚀 主要機能
+- **統合ジョブサーチ**: CrowdWorks + Upworkの統合案件検索
 - **自動スクレイピング**: Playwright + Chromiumによる15分間隔実行
 - **AI評価**: OpenAI GPT-4による案件品質評価
+- **高時給フィルタリング**: 時給一定以上の案件自動抽出
+- **詳細レポート**: Markdown/JSON形式での自動レポート生成
 - **スマート通知**: 高評価案件の即座メール送信
 - **コスト最適化**: 月額$5以下での運用
 
@@ -81,11 +84,35 @@ cd crowdworks-search
 # 依存関係インストール
 npm install
 
+# 環境変数設定
+cp env.example .env
+# .envファイルを編集してAPI認証情報を設定
+
+# ランサーズ自動ログイン設定（オプション）
+# プロジェクトルートに.envファイルを作成し、以下を追加：
+# LANCERS_EMAIL=your-lancers-email@example.com
+# LANCERS_PASSWORD=your-lancers-password
+
 # AWS認証情報設定
 aws configure
 
 # CDK初期化（初回のみ）
 npx cdk bootstrap
+```
+
+### 3. 新機能: 統合ジョブサーチ
+```bash
+# 基本的な統合検索実行（最低時給3000円）
+npm run integrated-search
+
+# 高時給案件検索（最低時給4000円）
+npm run search:high-rate
+
+# 開発者向け案件検索（React, TypeScript等）
+npm run search:dev
+
+# カスタム検索
+npm run integrated-search -- --min-rate 5000 --max-jobs 30 --keywords "nodejs,aws"
 ```
 
 ### 3. **コンテナイメージ版デプロイ（推奨）**
@@ -156,6 +183,55 @@ npm run docker:run
 npx playwright install chromium
 npm run test:e2e
 ```
+
+## 📚 統合ジョブサーチの使用方法
+
+### 基本コマンド
+```bash
+# 全てのオプション表示
+npm run integrated-search -- --help
+
+# 基本検索（最低時給3000円、最大50件/サイト）
+npm run integrated-search
+
+# 条件指定検索
+npm run integrated-search -- --min-rate 4000 --max-jobs 30
+
+# カテゴリ指定検索
+npm run integrated-search -- --categories "web,mobile"
+
+# キーワード検索
+npm run integrated-search -- --keywords "react,typescript,nodejs"
+
+# 出力形式指定
+npm run integrated-search -- --format markdown
+```
+
+### 環境変数設定
+```bash
+# Upwork API認証（必須）
+UPWORK_CONSUMER_KEY=your_consumer_key
+UPWORK_CONSUMER_SECRET=your_consumer_secret
+UPWORK_ACCESS_TOKEN=your_access_token    # オプション
+UPWORK_ACCESS_TOKEN_SECRET=your_secret   # オプション
+
+# OpenAI API（AI分析用）
+OPENAI_API_KEY=your_openai_api_key
+```
+
+### 出力ファイル
+実行後、`output/`ディレクトリに以下のファイルが生成されます：
+
+- `integrated-job-report-YYYY-MM-DD.json` - JSON形式の詳細レポート
+- `integrated-job-report-YYYY-MM-DD.md` - Markdown形式のサマリーレポート  
+- `high-value-jobs-YYYY-MM-DD.md` - 高時給案件の詳細レポート
+
+### レポート内容
+- **CrowdWorks**: 既存スクレイピング機能による案件取得
+- **Upwork**: API経由での案件取得（モック実装）
+- **通貨変換**: USD→JPY自動変換（現在レート: 1USD = 150JPY）
+- **フィルタリング**: 時給一定以上の案件自動抽出
+- **AI分析**: 市場動向とおすすめ案件の分析
 
 ### ログ確認
 ```bash

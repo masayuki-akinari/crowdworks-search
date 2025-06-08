@@ -56,10 +56,12 @@ readme.md
 scripts/analyze-details.ts
 scripts/calculate-recommendation-score.ts
 scripts/extract-high-hourly-jobs.ts
+scripts/integrated-job-search.ts
 scripts/setup-github-oidc.sh
 src/index.ts
 src/infrastructure/crowdworks-searcher-stack.ts
 src/lambda/handler.ts
+src/services/AppliedJobsService.ts
 src/services/index.ts
 src/types/index.ts
 src/utils/index.ts
@@ -68,6 +70,594 @@ tsconfig.json
 
 <files>
 This section contains the contents of the repository's files.
+
+<file path="scripts/integrated-job-search.ts">
+require('dotenv').config();
+
+import {
+    IntegratedJobSearchService,
+    CurrencyService
+} from '../src/services/index';
+import {
+    UpworkCredentials,
+    IntegratedSearchConfig,
+    IntegratedJobReport
+} from '../src/types/index';
+import { writeFileSync, existsSync, mkdirSync } from 'fs';
+import * as path from 'path';
+
+/**
+ * 統合ジョブサーチスクリプト
+ * CrowdWorksとUpworkから高時給案件を検索してレポート生成
+ */
+
+// 出力ディレクトリの確保
+const outputDir = 'output';
+if (!existsSync(outputDir)) {
+    mkdirSync(outputDir, { recursive: true });
+}
+
+// 環境変数から設定を取得
+function getUpworkCredentials(): UpworkCredentials {
+    const consumerKey = process.env['UPWORK_CONSUMER_KEY'];
+    const consumerSecret = process.env['UPWORK_CONSUMER_SECRET'];
+    const accessToken = process.env['UPWORK_ACCESS_TOKEN'];
+    const accessTokenSecret = process.env['UPWORK_ACCESS_TOKEN_SECRET'];
+
+    if (!consumerKey || !consumerSecret) {
+        throw new Error('Upwork認証情報が不足しています。UPWORK_CONSUMER_KEY, UPWORK_CONSUMER_SECRETを設定してください。');
+    }
+
+    const credentials: UpworkCredentials = {
+        consumerKey,
+        consumerSecret
+    };
+
+    if (accessToken) {
+        credentials.accessToken = accessToken;
+    }
+
+    if (accessTokenSecret) {
+        credentials.accessTokenSecret = accessTokenSecret;
+    }
+
+    return credentials;
+}
+
+// デフォルト統合検索設定
+function createDefaultSearchConfig(): IntegratedSearchConfig {
+    return {
+        enabled: {
+            crowdworks: true,
+            upwork: true
+        },
+        limits: {
+            maxJobsPerSource: 50,
+            maxExecutionTime: 300 // 5分
+        },
+        filtering: {
+            minHourlyRateJPY: 3000, // 最低時給3000円
+            minBudgetJPY: 50000, // 最低予算5万円
+            excludeKeywords: ['テスト', 'アンケート', '単純作業'],
+            requiredSkills: []
+        },
+        currency: {
+            exchangeRateUSDToJPY: 150, // USD→JPY換算レート
+            lastUpdated: new Date()
+        }
+    };
+}
+
+/**
+ * メイン実行関数
+ */
+async function executeIntegratedJobSearch(options: {
+    minHourlyRate?: number;
+    maxJobsPerSource?: number;
+    categories?: string[];
+    keywords?: string[];
+    outputFormat?: 'json' | 'markdown' | 'both';
+}): Promise<void> {
+    console.log('🚀 統合ジョブサーチを開始します...');
+    console.log(`📊 設定: 最低時給${options.minHourlyRate || 3000}円, 最大取得件数${options.maxJobsPerSource || 50}件/サイト`);
+
+    const startTime = Date.now();
+
+    try {
+        // 認証情報とサービス初期化
+        console.log('🔐 Upwork認証情報を取得中...');
+        const upworkCredentials = getUpworkCredentials();
+
+        console.log('⚙️ 検索設定を初期化中...');
+        const searchConfig = createDefaultSearchConfig();
+
+        // カスタム設定の適用
+        if (options.minHourlyRate) {
+            searchConfig.filtering.minHourlyRateJPY = options.minHourlyRate;
+        }
+        if (options.maxJobsPerSource) {
+            searchConfig.limits.maxJobsPerSource = options.maxJobsPerSource;
+        }
+
+        // 統合サービスの初期化
+        const integratedService = new IntegratedJobSearchService(
+            upworkCredentials,
+            searchConfig
+        );
+
+        console.log('🔍 統合案件検索を実行中...');
+
+        console.log('📝 検索結果レポートを生成中...');
+
+        // レポート生成
+        const reportParams = {
+            minHourlyRate: options.minHourlyRate || 3000,
+            categories: options.categories || [],
+            maxJobsPerSource: options.maxJobsPerSource || 50
+        };
+
+        const report = await integratedService.generateReport(reportParams);
+
+        // 結果の出力
+        await saveResults(report, options.outputFormat || 'both');
+
+        // 実行サマリーの表示
+        displaySummary(report, Date.now() - startTime);
+
+    } catch (error) {
+        console.error('❌ 統合ジョブサーチでエラーが発生しました:', error instanceof Error ? error.message : String(error));
+        process.exit(1);
+    }
+}
+
+/**
+ * 結果の保存
+ */
+async function saveResults(
+    report: IntegratedJobReport,
+    format: 'json' | 'markdown' | 'both'
+): Promise<void> {
+    const timestamp = new Date().toISOString().split('T')[0];
+    const baseFilename = `integrated-job-report-${timestamp}`;
+
+    if (format === 'json' || format === 'both') {
+        const jsonPath = path.join(outputDir, `${baseFilename}.json`);
+        writeFileSync(jsonPath, JSON.stringify(report, null, 2), 'utf8');
+        console.log(`💾 JSON レポートを保存: ${jsonPath}`);
+    }
+
+    if (format === 'markdown' || format === 'both') {
+        const markdownPath = path.join(outputDir, `${baseFilename}.md`);
+        const markdownContent = generateMarkdownReport(report);
+        writeFileSync(markdownPath, markdownContent, 'utf8');
+        console.log(`📄 Markdown レポートを保存: ${markdownPath}`);
+    }
+
+    // 高時給案件の詳細レポート
+    if (report.highValueJobs.upwork.length > 0 || report.highValueJobs.crowdworks.length > 0) {
+        const highValuePath = path.join(outputDir, `high-value-jobs-${timestamp}.md`);
+        const highValueContent = generateHighValueJobsReport(report);
+        writeFileSync(highValuePath, highValueContent, 'utf8');
+        console.log(`💰 高時給案件詳細レポートを保存: ${highValuePath}`);
+    }
+}
+
+/**
+ * Markdownレポート生成
+ */
+function generateMarkdownReport(report: IntegratedJobReport): string {
+    const date = report.generatedAt.toLocaleDateString('ja-JP');
+    const time = report.generatedAt.toLocaleTimeString('ja-JP');
+
+    return `# 統合ジョブサーチレポート
+
+> **生成日時**: ${date} ${time}  
+> **レポートID**: ${report.id}  
+
+## 📊 検索サマリー
+
+| 項目 | CrowdWorks | Upwork | 合計 |
+|------|------------|--------|------|
+| 取得案件数 | ${report.results.crowdworks.total} | ${report.results.upwork.total} | ${report.results.summary.totalJobs} |
+| 高時給案件数 | - | ${report.highValueJobs.upwork.length} | ${report.results.summary.highHourlyJobs} |
+| 検索成功 | ${report.results.crowdworks.success ? '✅' : '❌'} | ${report.results.upwork.success ? '✅' : '❌'} | - |
+| 実行時間 | ${report.results.crowdworks.executionTime}ms | ${report.results.upwork.executionTime}ms | ${report.results.summary.executionTime}ms |
+
+## 🎯 検索条件
+
+- **最低時給**: ${report.criteria.minHourlyRate.toLocaleString()}円
+- **最大取得件数**: ${report.criteria.maxJobsPerSource}件/サイト
+- **対象カテゴリ**: ${report.criteria.categories.length > 0 ? report.criteria.categories.join(', ') : '全カテゴリ'}
+
+## 📈 市場分析
+
+${report.analysis.marketTrends}
+
+## 🎯 おすすめ
+
+${report.analysis.recommendations.map(rec => `- ${rec}`).join('\n')}
+
+## ⚠️ 注意事項
+
+${report.analysis.alerts.length > 0
+            ? report.analysis.alerts.map(alert => `- ${alert}`).join('\n')
+            : '特になし'}
+
+## 💰 高時給案件 (Upwork)
+
+${report.highValueJobs.upwork.length > 0
+            ? report.highValueJobs.upwork.map(job => {
+                const hourlyRate = CurrencyService.calculateUpworkHourlyRateJPY(job, 150);
+                return `### ${job.title}
+- **時給**: ${hourlyRate ? `${hourlyRate.toLocaleString()}円` : '固定価格'}
+- **スキル**: ${job.skills.slice(0, 5).join(', ')}
+- **提案数**: ${job.proposals}件
+- **クライアント**: ${job.client.country || '不明'} (評価率: ${job.client.hireRate || 'N/A'}%)
+- **URL**: [案件詳細](${job.url})
+
+`;
+            }).join('\n')
+            : '条件に合う高時給案件が見つかりませんでした。'}
+
+---
+
+*このレポートは自動生成されました (${new Date().toISOString()})*
+`;
+}
+
+/**
+ * 高時給案件詳細レポート生成
+ */
+function generateHighValueJobsReport(report: IntegratedJobReport): string {
+    return `# 高時給案件詳細レポート
+
+> **最低時給条件**: ${report.criteria.minHourlyRate.toLocaleString()}円以上  
+> **生成日時**: ${report.generatedAt.toLocaleString('ja-JP')}  
+
+## 📊 サマリー
+
+- **CrowdWorks高時給案件**: ${report.highValueJobs.crowdworks.length}件
+- **Upwork高時給案件**: ${report.highValueJobs.upwork.length}件
+- **総合計**: ${report.highValueJobs.crowdworks.length + report.highValueJobs.upwork.length}件
+
+## 💰 Upwork 高時給案件詳細
+
+${report.highValueJobs.upwork.map((job, index) => {
+        const hourlyRate = CurrencyService.calculateUpworkHourlyRateJPY(job, 150);
+
+        return `### ${index + 1}. ${job.title}
+
+**基本情報**
+- **時給**: ${hourlyRate ? `${hourlyRate.toLocaleString()}円 (USD $${job.budget.min || 'N/A'}-$${job.budget.max || 'N/A'})` : `固定価格 $${job.budget.amount}`}
+- **案件タイプ**: ${job.jobType === 'hourly' ? '時間単価' : '固定価格'}
+- **期間**: ${job.duration}
+- **経験レベル**: ${job.experienceLevel}
+- **提案数**: ${job.proposals}件
+
+**クライアント情報**
+- **国**: ${job.client.country || '不明'}
+- **登録日**: ${job.client.memberSince || '不明'}
+- **総支出**: $${job.client.totalSpent?.toLocaleString() || 'N/A'}
+- **採用率**: ${job.client.hireRate || 'N/A'}%
+- **支払い認証**: ${job.client.paymentVerified ? '✅' : '❌'}
+
+**必要スキル**
+${job.skills.map(skill => `- ${skill}`).join('\n')}
+
+**案件説明**
+${job.description.substring(0, 200)}...
+
+**詳細URL**: [${job.url}](${job.url})
+
+---
+
+`;
+    }).join('')}
+
+## 🎯 CrowdWorks 高時給案件詳細
+
+${report.highValueJobs.crowdworks.length > 0
+            ? 'CrowdWorks案件の詳細はこちらに表示されます（実装予定）'
+            : '条件に合うCrowdWorks案件が見つかりませんでした。'}
+
+---
+
+*詳細レポート生成完了*
+`;
+}
+
+/**
+ * 実行サマリーの表示
+ */
+function displaySummary(report: IntegratedJobReport, executionTime: number): void {
+    console.log('\n🎉 統合ジョブサーチ完了！');
+    console.log('='.repeat(50));
+    console.log(`📊 総案件数: ${report.results.summary.totalJobs}件`);
+    console.log(`💰 高時給案件: ${report.results.summary.highHourlyJobs}件`);
+    console.log(`📈 平均時給: ${report.results.summary.averageHourlyRate.toLocaleString()}円`);
+    console.log(`⏱️ 実行時間: ${Math.round(executionTime / 1000)}秒`);
+    console.log('='.repeat(50));
+
+    if (report.analysis.alerts.length > 0) {
+        console.log('\n⚠️ 注意事項:');
+        report.analysis.alerts.forEach(alert => console.log(`  - ${alert}`));
+    }
+
+    if (report.analysis.recommendations.length > 0) {
+        console.log('\n🎯 おすすめ:');
+        report.analysis.recommendations.forEach(rec => console.log(`  - ${rec}`));
+    }
+}
+
+/**
+ * CLIインターフェース
+ */
+async function main(): Promise<void> {
+    const args = process.argv.slice(2);
+
+    // ヘルプ表示
+    if (args.includes('--help') || args.includes('-h')) {
+        console.log(`
+🔍 統合ジョブサーチツール - CrowdWorks & Upwork
+
+使用方法:
+  npm run integrated-search [オプション]
+
+オプション:
+  --min-rate <数値>     最低時給（円）[デフォルト: 3000]
+  --max-jobs <数値>     最大取得件数/サイト [デフォルト: 50]
+  --categories <文字列> 対象カテゴリ（カンマ区切り）
+  --keywords <文字列>   検索キーワード（カンマ区切り）
+  --format <形式>       出力形式 [json|markdown|both] [デフォルト: both]
+  --help, -h           このヘルプを表示
+
+環境変数:
+  UPWORK_CONSUMER_KEY     Upwork Consumer Key（必須）
+  UPWORK_CONSUMER_SECRET  Upwork Consumer Secret（必須）
+  UPWORK_ACCESS_TOKEN     Upwork Access Token（オプション）
+  UPWORK_ACCESS_TOKEN_SECRET Upwork Access Token Secret（オプション）
+
+例:
+  npm run integrated-search
+  npm run integrated-search -- --min-rate 4000 --max-jobs 30
+  npm run integrated-search -- --categories "web,mobile" --keywords "react,typescript"
+    `);
+        return;
+    }
+
+    // 引数の解析
+    const options: Parameters<typeof executeIntegratedJobSearch>[0] = {};
+
+    for (let i = 0; i < args.length; i++) {
+        const arg = args[i];
+        const nextArg = args[i + 1];
+
+        switch (arg) {
+            case '--min-rate':
+                if (nextArg !== undefined) {
+                    options.minHourlyRate = parseInt(nextArg);
+                    i++; // 次の引数をスキップ
+                }
+                break;
+            case '--max-jobs':
+                if (nextArg !== undefined) {
+                    options.maxJobsPerSource = parseInt(nextArg);
+                    i++; // 次の引数をスキップ
+                }
+                break;
+            case '--categories':
+                if (nextArg !== undefined) {
+                    options.categories = nextArg.split(',').map(s => s.trim());
+                    i++; // 次の引数をスキップ
+                }
+                break;
+            case '--keywords':
+                if (nextArg !== undefined) {
+                    options.keywords = nextArg.split(',').map(s => s.trim());
+                    i++; // 次の引数をスキップ
+                }
+                break;
+            case '--format':
+                if (nextArg !== undefined) {
+                    options.outputFormat = nextArg as 'json' | 'markdown' | 'both';
+                    i++; // 次の引数をスキップ
+                }
+                break;
+        }
+    }
+
+    await executeIntegratedJobSearch(options);
+}
+
+// スクリプト実行
+if (require.main === module) {
+    main().catch(error => {
+        console.error('❌ 実行エラー:', error instanceof Error ? error.message : String(error));
+        process.exit(1);
+    });
+}
+
+export { executeIntegratedJobSearch };
+</file>
+
+<file path="src/services/AppliedJobsService.ts">
+import { Page } from 'playwright';
+import { CrowdWorksCredentials, CrowdWorksLoginResult } from '../types';
+
+/**
+ * 応募済み案件情報
+ */
+export interface AppliedJob {
+    jobId: string;
+    title: string;
+    url: string;
+    applicationDate: string;
+    status: string;
+}
+
+/**
+ * 応募済み案件取得サービス
+ */
+export class AppliedJobsService {
+    private page: Page;
+    private credentials: CrowdWorksCredentials;
+
+    constructor(page: Page, credentials: CrowdWorksCredentials) {
+        this.page = page;
+        this.credentials = credentials;
+    }
+
+    /**
+     * CrowdWorksにログインする
+     */
+    async login(): Promise<CrowdWorksLoginResult> {
+        const startTime = Date.now();
+
+        try {
+            console.log('🔑 CrowdWorksにログイン中...');
+
+            // ログインページに移動
+            await this.page.goto('https://crowdworks.jp/login', {
+                waitUntil: 'networkidle',
+                timeout: 30000
+            });
+
+            // すでにログイン済みかチェック
+            const isAlreadyLoggedIn = await this.page.evaluate(() => {
+                return !document.querySelector('textbox[name="メールアドレス"]') &&
+                    !document.querySelector('input[type="email"]') &&
+                    !document.title.includes('ログイン');
+            });
+
+            if (isAlreadyLoggedIn) {
+                console.log('✅ 既にログイン済みです');
+                return {
+                    success: true,
+                    isLoggedIn: true,
+                    executionTime: Date.now() - startTime
+                };
+            }
+
+            // メールアドレスとパスワードを入力（ブラウザで確認したセレクターを使用）
+            await this.page.getByRole('textbox', { name: 'メールアドレス' }).fill(this.credentials.email);
+            await this.page.getByRole('textbox', { name: 'パスワード' }).fill(this.credentials.password);
+
+            // ログインボタンをクリック
+            await this.page.getByRole('button', { name: 'ログイン', exact: true }).click();
+
+            // ログイン完了を待機
+            await this.page.waitForURL(url => !url.toString().includes('/login'), { timeout: 15000 });
+
+            console.log('✅ ログインに成功しました');
+
+            return {
+                success: true,
+                isLoggedIn: true,
+                executionTime: Date.now() - startTime
+            };
+
+        } catch (error) {
+            console.error('❌ ログインに失敗しました:', error);
+            return {
+                success: false,
+                isLoggedIn: false,
+                error: error instanceof Error ? error.message : 'ログインに失敗しました',
+                executionTime: Date.now() - startTime
+            };
+        }
+    }
+
+    /**
+     * 応募済み案件一覧を取得する
+     */
+    async getAppliedJobs(): Promise<AppliedJob[]> {
+        try {
+            console.log('📋 応募済み案件を取得中...');
+
+            // 応募済み案件ページに移動
+            await this.page.goto('https://crowdworks.jp/e/proposals?ref=mypage_joboffers_all', {
+                waitUntil: 'networkidle',
+                timeout: 30000
+            });
+
+            // 応募済み案件を取得
+            const appliedJobs = await this.page.evaluate(() => {
+                const jobs: AppliedJob[] = [];
+
+                // 応募済み案件のセレクタを特定する（実際のHTMLに基づいて調整）
+                const jobElements = document.querySelectorAll('.proposal-item, .job-item, [data-job-id]');
+
+                jobElements.forEach(element => {
+                    try {
+                        // jobIdをURLから抽出
+                        const linkElement = element.querySelector('a[href*="/public/jobs/"]') as HTMLAnchorElement;
+                        if (!linkElement) return;
+
+                        const url = linkElement.href;
+                        const jobIdMatch = url.match(/\/jobs\/(\d+)/);
+                        if (!jobIdMatch) return;
+
+                        const jobId = jobIdMatch[1];
+
+                        // タイトルを取得
+                        const titleElement = element.querySelector('.job-title, .proposal-title, h3, h4');
+                        const title = titleElement?.textContent?.trim() || '';
+
+                        // 応募日を取得（可能であれば）
+                        const dateElement = element.querySelector('.application-date, .proposal-date, .date');
+                        const applicationDate = dateElement?.textContent?.trim() || '';
+
+                        // ステータスを取得（可能であれば）
+                        const statusElement = element.querySelector('.status, .proposal-status');
+                        const status = statusElement?.textContent?.trim() || '';
+
+                        if (jobId && title) {
+                            jobs.push({
+                                jobId,
+                                title,
+                                url,
+                                applicationDate,
+                                status
+                            });
+                        }
+                    } catch (error) {
+                        console.warn('案件の解析でエラー:', error);
+                    }
+                });
+
+                return jobs;
+            });
+
+            console.log(`✅ 応募済み案件を${appliedJobs.length}件取得しました`);
+
+            // ログ出力
+            if (appliedJobs.length > 0) {
+                console.log('📋 応募済み案件一覧:');
+                appliedJobs.slice(0, 5).forEach((job, index) => {
+                    console.log(`  ${index + 1}. ${job.title} (ID: ${job.jobId})`);
+                });
+                if (appliedJobs.length > 5) {
+                    console.log(`  ... 他${appliedJobs.length - 5}件`);
+                }
+            }
+
+            return appliedJobs;
+
+        } catch (error) {
+            console.error('❌ 応募済み案件の取得に失敗しました:', error);
+            return [];
+        }
+    }
+
+    /**
+     * 応募済み案件のJobIDセットを取得する
+     */
+    async getAppliedJobIds(): Promise<Set<string>> {
+        const appliedJobs = await this.getAppliedJobs();
+        return new Set(appliedJobs.map(job => job.jobId));
+    }
+}
+</file>
 
 <file path=".prettierrc">
 {
@@ -287,215 +877,6 @@ CMD ["dist/lambda/handler.lambdaHandler"]
 | 日付 | 更新者 | 更新内容 |
 |------|--------|----------|
 |      |        |          |
-</file>
-
-<file path="scripts/analyze-details.ts">
-require('dotenv').config();
-
-import { readFileSync, writeFileSync } from 'fs';
-import { OpenAI } from 'openai';
-import * as path from 'path';
-
-// 型定義
-interface CrowdWorksJobDetail {
-    jobId: string;
-    title: string;
-    detailedDescription: string;
-    [key: string]: any;
-}
-
-interface AnalysisResult {
-    jobId: string;
-    title: string;
-    工数_見積もり: string;
-    想定時給: string;
-    難易度: string;
-    gpt_summary: string;
-}
-
-// .envからAPIキー取得
-const apiKey = process.env['OPENAI_API_KEY'];
-if (!apiKey) {
-    console.error('❌ OPENAI_API_KEYが設定されていません');
-    process.exit(1);
-}
-
-const openai = new OpenAI({ apiKey });
-
-// 引数: 入力ファイル, 出力ファイル
-const [, , inputFile, outputFile] = process.argv;
-if (!inputFile || !outputFile) {
-    console.error('Usage: ts-node scripts/analyze-details.ts <input.json> <output.json>');
-    process.exit(1);
-}
-
-const inputPath = path.resolve(inputFile);
-const outputPath = path.resolve(outputFile);
-
-const details: CrowdWorksJobDetail[] = JSON.parse(readFileSync(inputPath, 'utf8'));
-
-// 並列実行制御クラス
-class ConcurrencyLimiter {
-    private runningCount = 0;
-    private queue: (() => Promise<void>)[] = [];
-
-    constructor(private maxConcurrency: number) { }
-
-    async execute<T>(task: () => Promise<T>): Promise<T> {
-        return new Promise<T>((resolve, reject) => {
-            const wrappedTask = async () => {
-                try {
-                    this.runningCount++;
-                    const result = await task();
-                    resolve(result);
-                } catch (error) {
-                    reject(error);
-                } finally {
-                    this.runningCount--;
-                    this.processQueue();
-                }
-            };
-
-            if (this.runningCount < this.maxConcurrency) {
-                wrappedTask();
-            } else {
-                this.queue.push(wrappedTask);
-            }
-        });
-    }
-
-    private processQueue() {
-        if (this.queue.length > 0 && this.runningCount < this.maxConcurrency) {
-            const nextTask = this.queue.shift();
-            if (nextTask) {
-                nextTask();
-            }
-        }
-    }
-}
-
-const limiter = new ConcurrencyLimiter(5); // 最大5件並列
-
-async function analyzeDetail(detail: CrowdWorksJobDetail): Promise<AnalysisResult> {
-    const prompt = `以下はクラウドワークスの案件詳細です。内容を読んで、
-1. この仕事にかかるおおよその工数（何時間くらいか）
-2. 想定される時給（日本円・固定値で1つの数値のみ）
-3. 案件の難易度（簡単/普通/難しい のいずれか）
-4. その根拠や注意点
-を日本語で簡潔にまとめてください。
-
-【重要な工数見積もりのポイント】
-- 記載された作業内容だけでなく、以下の前作業・付帯作業も必ず含めて計算してください：
-  * 要件定義・要件整理（クライアントとの認識合わせ）
-  * 初回打ち合わせ・ヒアリング（1-3回程度）
-  * 提案書・企画書・仕様書の作成
-  * 作業中の進捗報告・中間確認
-  * 修正・調整作業（通常2-3回は発生）
-  * テスト・検証・品質チェック
-  * 納品作業・説明・引き継ぎ
-  * 納品後の軽微なサポート・質問対応
-
-【重要な難易度判定のポイント】
-- **簡単**: 初心者・未経験者でも対応可能、基本的なスキルで十分、テンプレート作業中心
-- **普通**: 一般的なスキルレベルが必要、多少の学習や調査が必要、標準的な業務
-- **難しい**: 高度な専門知識・技術が必要、豊富な経験が前提、複雑な要件や新技術
-
-【重要な注意点】
-- クラウドワークスの案件は玉石混交で、タイトルで指定した価格が案件詳細では嘘だと書かれていたりします
-- 詳細説明を注意深く読み、実際の作業内容と報酬を正確に把握してください
-- タイトルの金額に惑わされず、詳細に書かれた実際の条件から確からしい想定時給を算出してください
-- 「〇〇円スタート」「能力に応じて」などの曖昧な表現にも注意してください
-- 初回は低価格で「継続で単価アップ」という案件は、初回価格を基準に計算してください
-- **時給は必ず1つの具体的な数値で回答してください（例：2500円）。範囲や曖昧な表現は禁止です**
-- **難易度は必ず「簡単」「普通」「難しい」のいずれか1つで回答してください**
-- **実際のフリーランス作業の現実を反映した、十分な工数を見積もってください**
-
----
-タイトル: ${detail.title}
-
-詳細説明: ${detail.detailedDescription}
----
-
-【出力フォーマット】
-工数: <例: 8時間>
-時給: <例: 2500円>
-難易度: <例: 普通>
-要約: <根拠や注意点を1-2文で>`;
-
-    return limiter.execute(async () => {
-        const res = await openai.chat.completions.create({
-            model: 'gpt-4o',
-            messages: [
-                { role: 'system', content: 'あなたは日本のフリーランス市場の専門家で、クラウドワークス案件の現実的な工数見積もりと時給推定の専門家です。実際のフリーランス作業では要件定義や打ち合わせ、修正作業なども必要で、記載された作業以外にも多くの付帯作業が発生することを理解しています。' },
-                { role: 'user', content: prompt }
-            ],
-            max_tokens: 512,
-            temperature: 0.2,
-        });
-
-        const text = res.choices[0]?.message?.content || '';
-        // シンプルなパース
-        const 工数 = text.match(/工数[:：]\s*(.+)/)?.[1]?.trim() || '';
-        const 時給 = text.match(/時給[:：]\s*(.+)/)?.[1]?.trim() || '';
-        const 難易度 = text.match(/難易度[:：]\s*(.+)/)?.[1]?.trim() || '';
-        const 要約 = text.match(/要約[:：]\s*([\s\S]*)/)?.[1]?.trim() || text;
-
-        return {
-            jobId: detail.jobId,
-            title: detail.title,
-            工数_見積もり: 工数,
-            想定時給: 時給,
-            難易度: 難易度,
-            gpt_summary: 要約,
-        };
-    });
-}
-
-(async () => {
-    console.log(`🚀 並列分析開始: ${details.length}件（最大5件並列）`);
-    const results: AnalysisResult[] = [];
-    let completed = 0;
-
-    // 全ての案件を並列で処理開始
-    const promises = details.map(async (detail, index) => {
-        try {
-            const result = await analyzeDetail(detail);
-            results.push(result);
-            completed++;
-            console.log(`✅ [${completed}/${details.length}] ${detail.title.substring(0, 50)}...`);
-
-            // 定期的に中間結果を保存
-            if (completed % 5 === 0 || completed === details.length) {
-                // 結果をjobId順にソートして保存
-                const sortedResults = results.sort((a, b) => a.jobId.localeCompare(b.jobId));
-                writeFileSync(outputPath, JSON.stringify(sortedResults, null, 2), 'utf8');
-                console.log(`💾 中間保存: ${completed}件完了`);
-            }
-
-            return { success: true, result, index };
-        } catch (e) {
-            console.error(`❌ [${index + 1}/${details.length}] ${detail.title.substring(0, 50)}... - エラー:`, e);
-            return { success: false, error: e, index };
-        }
-    });
-
-    // 全ての処理が完了するまで待機
-    const settledResults = await Promise.allSettled(promises);
-
-    // 最終結果の統計
-    const successful = settledResults.filter(r => r.status === 'fulfilled' && r.value.success).length;
-    const failed = settledResults.length - successful;
-
-    console.log(`\n🎯 並列分析完了:`)
-    console.log(`✅ 成功: ${successful}件`);
-    console.log(`❌ 失敗: ${failed}件`);
-    console.log(`📁 出力ファイル: ${outputPath}`);
-
-    // 最終保存（jobId順でソート）
-    const finalResults = results.sort((a, b) => a.jobId.localeCompare(b.jobId));
-    writeFileSync(outputPath, JSON.stringify(finalResults, null, 2), 'utf8');
-    console.log(`💾 最終保存完了: ${finalResults.length}件`);
-})();
 </file>
 
 <file path="scripts/setup-github-oidc.sh">
@@ -760,6 +1141,15 @@ console.log(`   Account: ${account || 'default'}`);
 CROWDWORKS_EMAIL=your-crowdworks-email@example.com
 CROWDWORKS_PASSWORD=your-crowdworks-password
 
+# Upwork API認証情報（統合ジョブサーチ用）
+UPWORK_CONSUMER_KEY=your-upwork-consumer-key
+UPWORK_CONSUMER_SECRET=your-upwork-consumer-secret
+UPWORK_ACCESS_TOKEN=your-upwork-access-token
+UPWORK_ACCESS_TOKEN_SECRET=your-upwork-access-token-secret
+
+# OpenAI API設定
+OPENAI_API_KEY=your-openai-api-key
+
 # AWS設定（必要に応じて）
 AWS_REGION=ap-northeast-1
 AWS_PROFILE=default
@@ -780,11 +1170,740 @@ PLAYWRIGHT_BROWSERS_PATH=
 PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=0
 </file>
 
+<file path="scripts/analyze-details.ts">
+require('dotenv').config();
+
+import { readFileSync, writeFileSync, existsSync } from 'fs';
+import { OpenAI } from 'openai';
+import * as path from 'path';
+
+// 型定義
+interface CrowdWorksJobDetail {
+    jobId: string;
+    title: string;
+    detailedDescription: string;
+    [key: string]: any;
+}
+
+interface AnalysisResult {
+    jobId: string;
+    title: string;
+    工数_見積もり: string;
+    想定時給: string;
+    難易度: string;
+    gpt_summary: string;
+}
+
+// .envからAPIキー取得
+const apiKey = process.env['OPENAI_API_KEY'];
+if (!apiKey) {
+    console.error('❌ OPENAI_API_KEYが設定されていません');
+    process.exit(1);
+}
+
+const openai = new OpenAI({ apiKey });
+
+// 引数: 入力ファイル, 出力ファイル
+const [, , inputFile, outputFile] = process.argv;
+if (!inputFile || !outputFile) {
+    console.error('Usage: ts-node scripts/analyze-details.ts <input.json> <output.json>');
+    process.exit(1);
+}
+
+const inputPath = path.resolve(inputFile);
+const outputPath = path.resolve(outputFile);
+
+const details: CrowdWorksJobDetail[] = JSON.parse(readFileSync(inputPath, 'utf8'));
+
+// 既存の分析済みデータをキャッシュとして読み込み
+let existingAnalysis: AnalysisResult[] = [];
+if (existsSync(outputPath)) {
+    try {
+        existingAnalysis = JSON.parse(readFileSync(outputPath, 'utf8'));
+        console.log(`📋 既存の分析済みデータを読み込み: ${existingAnalysis.length}件`);
+    } catch (error) {
+        console.log(`⚠️ 既存データの読み込みに失敗: ${error}`);
+        existingAnalysis = [];
+    }
+} else {
+    console.log(`📝 新規分析ファイルを作成: ${outputPath}`);
+}
+
+// 既存の分析済みjobIdのセットを作成
+const existingJobIds = new Set(existingAnalysis.map(analysis => analysis.jobId));
+
+// 新規分析が必要な案件のみを抽出
+const newDetails = details.filter(detail => !existingJobIds.has(detail.jobId));
+const cacheHitCount = details.length - newDetails.length;
+
+console.log(`📊 キャッシュ状況:`);
+console.log(`   全案件数: ${details.length}件`);
+console.log(`   キャッシュヒット: ${cacheHitCount}件`);
+console.log(`   新規分析対象: ${newDetails.length}件`);
+
+if (newDetails.length === 0) {
+    console.log(`🎉 全案件が既に分析済みです。処理をスキップします。`);
+    process.exit(0);
+}
+
+// 並列実行制御クラス
+class ConcurrencyLimiter {
+    private runningCount = 0;
+    private queue: (() => Promise<void>)[] = [];
+
+    constructor(private maxConcurrency: number) { }
+
+    async execute<T>(task: () => Promise<T>): Promise<T> {
+        return new Promise<T>((resolve, reject) => {
+            const wrappedTask = async () => {
+                try {
+                    this.runningCount++;
+                    const result = await task();
+                    resolve(result);
+                } catch (error) {
+                    reject(error);
+                } finally {
+                    this.runningCount--;
+                    this.processQueue();
+                }
+            };
+
+            if (this.runningCount < this.maxConcurrency) {
+                wrappedTask();
+            } else {
+                this.queue.push(wrappedTask);
+            }
+        });
+    }
+
+    private processQueue() {
+        if (this.queue.length > 0 && this.runningCount < this.maxConcurrency) {
+            const nextTask = this.queue.shift();
+            if (nextTask) {
+                nextTask();
+            }
+        }
+    }
+}
+
+const limiter = new ConcurrencyLimiter(5); // 最大5件並列
+
+async function analyzeDetail(detail: CrowdWorksJobDetail): Promise<AnalysisResult> {
+    const prompt = `以下はクラウドワークスの案件詳細です。内容を読んで、
+1. この仕事にかかるおおよその工数（何時間くらいか）
+2. 想定される時給（日本円・固定値で1つの数値のみ）
+3. 案件の難易度（簡単/普通/難しい のいずれか）
+4. その根拠や注意点
+を日本語で簡潔にまとめてください。
+
+【重要な工数見積もりのポイント】
+- 記載された作業内容だけでなく、以下の前作業・付帯作業も必ず含めて計算してください：
+  * 要件定義・要件整理（クライアントとの認識合わせ）
+  * 初回打ち合わせ・ヒアリング（1-3回程度）
+  * 提案書・企画書・仕様書の作成
+  * 作業中の進捗報告・中間確認
+  * 修正・調整作業（通常2-3回は発生）
+  * テスト・検証・品質チェック
+  * 納品作業・説明・引き継ぎ
+  * 納品後の軽微なサポート・質問対応
+
+【重要な難易度判定のポイント】
+- **簡単**: 初心者・未経験者でも対応可能、基本的なスキルで十分、テンプレート作業中心
+- **普通**: 一般的なスキルレベルが必要、多少の学習や調査が必要、標準的な業務
+- **難しい**: 高度な専門知識・技術が必要、豊富な経験が前提、複雑な要件や新技術
+
+【重要な注意点】
+- クラウドワークスの案件は玉石混交で、タイトルで指定した価格が案件詳細では嘘だと書かれていたりします
+- 詳細説明を注意深く読み、実際の作業内容と報酬を正確に把握してください
+- タイトルの金額に惑わされず、詳細に書かれた実際の条件から確からしい想定時給を算出してください
+- "〇〇円スタート"「能力に応じて」などの曖昧な表現にも注意してください
+- 初回は低価格で「継続で単価アップ」という案件は、初回価格を基準に計算してください
+- **時給は必ず1つの具体的な数値で回答してください（例：2500円）。範囲や曖昧な表現は禁止です**
+- **難易度は必ず「簡単」「普通」「難しい」のいずれか1つで回答してください**
+- **実際のフリーランス作業の現実を反映した、十分な工数を見積もってください**
+
+---
+タイトル: ${detail.title}
+
+詳細説明: ${detail.detailedDescription}
+---
+
+【出力フォーマット】
+工数: <例: 8時間>
+時給: <例: 2500円>
+難易度: <例: 普通>
+要約: <根拠や注意点を1-2文で>`;
+
+    return limiter.execute(async () => {
+        const res = await openai.chat.completions.create({
+            model: 'gpt-4o',
+            messages: [
+                { role: 'system', content: 'あなたは日本のフリーランス市場の専門家で、クラウドワークス案件の現実的な工数見積もりと時給推定の専門家です。実際のフリーランス作業では要件定義や打ち合わせ、修正作業なども必要で、記載された作業以外にも多くの付帯作業が発生することを理解しています。' },
+                { role: 'user', content: prompt }
+            ],
+            max_tokens: 512,
+            temperature: 0.2,
+        });
+
+        const text = res.choices[0]?.message?.content || '';
+        // シンプルなパース
+        const 工数 = text.match(/工数[:：]\s*(.+)/)?.[1]?.trim() || '';
+        const 時給 = text.match(/時給[:：]\s*(.+)/)?.[1]?.trim() || '';
+        const 難易度 = text.match(/難易度[:：]\s*(.+)/)?.[1]?.trim() || '';
+        const 要約 = text.match(/要約[:：]\s*([\s\S]*)/)?.[1]?.trim() || text;
+
+        return {
+            jobId: detail.jobId,
+            title: detail.title,
+            工数_見積もり: 工数,
+            想定時給: 時給,
+            難易度: 難易度,
+            gpt_summary: 要約,
+        };
+    });
+}
+
+(async () => {
+    console.log(`🚀 並列分析開始: ${newDetails.length}件（最大5件並列）`);
+    const results: AnalysisResult[] = [];
+    let completed = 0;
+
+    // 全ての案件を並列で処理開始
+    const promises = newDetails.map(async (detail, index) => {
+        try {
+            const result = await analyzeDetail(detail);
+            results.push(result);
+            completed++;
+            console.log(`✅ [${completed}/${newDetails.length}] ${detail.title.substring(0, 50)}...`);
+
+            // 定期的に中間結果を保存
+            if (completed % 5 === 0 || completed === newDetails.length) {
+                // 既存データと新規データをマージ
+                const allResults = [...existingAnalysis, ...results];
+                const sortedResults = allResults.sort((a, b) => a.jobId.localeCompare(b.jobId));
+                writeFileSync(outputPath, JSON.stringify(sortedResults, null, 2), 'utf8');
+                console.log(`💾 中間保存: 新規${completed}件 + 既存${existingAnalysis.length}件 = 計${sortedResults.length}件`);
+            }
+
+            return { success: true, result, index };
+        } catch (e) {
+            console.error(`❌ [${index + 1}/${newDetails.length}] ${detail.title.substring(0, 50)}... - エラー:`, e);
+            return { success: false, error: e, index };
+        }
+    });
+
+    // 全ての処理が完了するまで待機
+    const settledResults = await Promise.allSettled(promises);
+
+    // 最終結果の統計
+    const successful = settledResults.filter(r => r.status === 'fulfilled' && r.value.success).length;
+    const failed = settledResults.length - successful;
+
+    console.log(`\n🎯 並列分析完了:`)
+    console.log(`✅ 新規分析成功: ${successful}件`);
+    console.log(`❌ 新規分析失敗: ${failed}件`);
+    console.log(`💾 キャッシュから再利用: ${cacheHitCount}件`);
+    console.log(`📁 出力ファイル: ${outputPath}`);
+
+    // 既存データと新規データをマージして最終保存
+    const allResults = [...existingAnalysis, ...results];
+    const finalResults = allResults.sort((a, b) => a.jobId.localeCompare(b.jobId));
+    writeFileSync(outputPath, JSON.stringify(finalResults, null, 2), 'utf8');
+    console.log(`💾 最終保存完了: 新規${results.length}件 + 既存${existingAnalysis.length}件 = 計${finalResults.length}件`);
+})();
+</file>
+
 <file path="src/services/index.ts">
 // Services module exports
 // TODO: 実際のサービスクラスを実装後、ここからエクスポート
 
-export {};
+import {
+    UpworkJobData,
+    UpworkCredentials,
+    UpworkLoginResult,
+    IntegratedJobSearchResult,
+    IntegratedJobReport,
+    IntegratedSearchConfig,
+    JobData
+} from '../types/index';
+
+/**
+ * Upwork API サービスクラス
+ */
+class UpworkService {
+    private credentials: UpworkCredentials;
+    private isAuthenticated = false;
+    private accessToken?: string;
+
+    constructor(credentials: UpworkCredentials) {
+        this.credentials = credentials;
+    }
+
+    /**
+     * OAuth認証を実行
+     */
+    async authenticate(): Promise<UpworkLoginResult> {
+        const startTime = Date.now();
+
+        try {
+            // 簡易実装: 認証情報の検証
+            if (!this.credentials.consumerKey || !this.credentials.consumerSecret) {
+                return {
+                    success: false,
+                    isAuthenticated: false,
+                    error: 'Consumer key and secret are required',
+                    executionTime: Date.now() - startTime
+                };
+            }
+
+            // TODO: 実際のOAuth認証フローの実装
+            // 現在は基本的な認証情報チェックのみ
+            this.isAuthenticated = true;
+            this.accessToken = this.credentials.accessToken || 'mock-token';
+
+            return {
+                success: true,
+                isAuthenticated: true,
+                accessToken: this.accessToken,
+                executionTime: Date.now() - startTime
+            };
+
+        } catch (error) {
+            return {
+                success: false,
+                isAuthenticated: false,
+                error: error instanceof Error ? error.message : 'Authentication failed',
+                executionTime: Date.now() - startTime
+            };
+        }
+    }
+
+    /**
+     * 案件を検索
+     */
+    async searchJobs(params: {
+        query?: string;
+        category?: string;
+        minBudget?: number;
+        maxBudget?: number;
+        jobType?: 'hourly' | 'fixed-price';
+        experienceLevel?: 'entry' | 'intermediate' | 'expert';
+        limit?: number;
+    }): Promise<UpworkJobData[]> {
+        if (!this.isAuthenticated) {
+            throw new Error('Not authenticated. Call authenticate() first.');
+        }
+
+        // TODO: 実際のUpwork API呼び出し実装
+        // 現在はモックデータを返す
+        const mockJobs: UpworkJobData[] = [
+            {
+                id: 'upwork-job-1',
+                title: 'Full Stack Web Developer for E-commerce Platform',
+                description: 'We need an experienced full stack developer to build a modern e-commerce platform using React and Node.js...',
+                url: 'https://www.upwork.com/jobs/~01234567890123456789',
+                budget: {
+                    type: 'hourly',
+                    min: 30,
+                    max: 60
+                },
+                duration: 'More than 6 months',
+                experienceLevel: 'expert',
+                jobType: 'hourly',
+                category: {
+                    name: 'Web Development',
+                    subcategory: 'Full Stack Development'
+                },
+                client: {
+                    country: 'United States',
+                    memberSince: '2020-01-15',
+                    totalSpent: 50000,
+                    hireRate: 85,
+                    totalJobs: 25,
+                    avgHourlyPaid: 45,
+                    paymentVerified: true
+                },
+                skills: ['React', 'Node.js', 'MongoDB', 'AWS', 'TypeScript'],
+                proposals: 5,
+                postedTime: '2024-01-15T10:30:00Z',
+                scrapedAt: new Date()
+            },
+            {
+                id: 'upwork-job-2',
+                title: 'Mobile App Development - React Native',
+                description: 'Looking for a React Native developer to create a cross-platform mobile application...',
+                url: 'https://www.upwork.com/jobs/~01234567890123456790',
+                budget: {
+                    type: 'fixed',
+                    amount: 8000
+                },
+                duration: '3 to 6 months',
+                experienceLevel: 'intermediate',
+                jobType: 'fixed-price',
+                category: {
+                    name: 'Mobile Development',
+                    subcategory: 'React Native'
+                },
+                client: {
+                    country: 'Canada',
+                    memberSince: '2019-05-20',
+                    totalSpent: 25000,
+                    hireRate: 92,
+                    totalJobs: 12,
+                    paymentVerified: true
+                },
+                skills: ['React Native', 'JavaScript', 'iOS', 'Android', 'Redux'],
+                proposals: 12,
+                postedTime: '2024-01-14T14:20:00Z',
+                scrapedAt: new Date()
+            }
+        ];
+
+        // フィルタリング適用
+        let filteredJobs = mockJobs;
+
+        if (params.query) {
+            const query = params.query.toLowerCase();
+            filteredJobs = filteredJobs.filter(job =>
+                job.title.toLowerCase().includes(query) ||
+                job.description.toLowerCase().includes(query)
+            );
+        }
+
+        if (params.jobType) {
+            filteredJobs = filteredJobs.filter(job => job.jobType === params.jobType);
+        }
+
+        if (params.experienceLevel) {
+            filteredJobs = filteredJobs.filter(job => job.experienceLevel === params.experienceLevel);
+        }
+
+        if (params.limit) {
+            filteredJobs = filteredJobs.slice(0, params.limit);
+        }
+
+        return filteredJobs;
+    }
+
+    /**
+     * 案件詳細を取得
+     */
+    async getJobDetails(jobId: string): Promise<UpworkJobData | null> {
+        if (!this.isAuthenticated) {
+            throw new Error('Not authenticated. Call authenticate() first.');
+        }
+
+        // TODO: 実際のAPI実装
+        // 現在はsearchJobsで取得したデータから検索
+        const jobs = await this.searchJobs({ limit: 100 });
+        return jobs.find(job => job.id === jobId) || null;
+    }
+}
+
+/**
+ * 通貨変換サービス
+ */
+class CurrencyService {
+    private static readonly DEFAULT_USD_TO_JPY = 150; // デフォルト換算レート
+
+    /**
+     * USD から JPY への変換
+     */
+    static convertUSDToJPY(usdAmount: number, exchangeRate?: number): number {
+        const rate = exchangeRate || this.DEFAULT_USD_TO_JPY;
+        return Math.round(usdAmount * rate);
+    }
+
+    /**
+     * JPY から USD への変換
+     */
+    static convertJPYToUSD(jpyAmount: number, exchangeRate?: number): number {
+        const rate = exchangeRate || this.DEFAULT_USD_TO_JPY;
+        return Math.round((jpyAmount / rate) * 100) / 100; // 小数点2桁まで
+    }
+
+    /**
+     * Upwork案件の時給をJPY換算
+     */
+    static calculateUpworkHourlyRateJPY(upworkJob: UpworkJobData, exchangeRate?: number): number | null {
+        if (upworkJob.budget.type === 'hourly') {
+            if (upworkJob.budget.min && upworkJob.budget.max) {
+                const avgUSD = (upworkJob.budget.min + upworkJob.budget.max) / 2;
+                return this.convertUSDToJPY(avgUSD, exchangeRate);
+            } else if (upworkJob.budget.min) {
+                return this.convertUSDToJPY(upworkJob.budget.min, exchangeRate);
+            }
+        }
+        return null;
+    }
+}
+
+/**
+ * 統合ジョブサーチサービス
+ */
+class IntegratedJobSearchService {
+    private crowdworksService?: any; // TODO: CrowdWorksServiceの型定義後に更新
+    private upworkService: UpworkService;
+    private config: IntegratedSearchConfig;
+
+    constructor(
+        upworkCredentials: UpworkCredentials,
+        config: IntegratedSearchConfig,
+        crowdworksService?: any
+    ) {
+        this.upworkService = new UpworkService(upworkCredentials);
+        this.config = config;
+        this.crowdworksService = crowdworksService;
+    }
+
+    /**
+     * 統合案件検索を実行
+     */
+    async searchJobs(params: {
+        categories?: string[];
+        minHourlyRateJPY?: number;
+        maxJobsPerSource?: number;
+        keywords?: string[];
+    }): Promise<IntegratedJobSearchResult> {
+        const startTime = Date.now();
+
+        const result: IntegratedJobSearchResult = {
+            crowdworks: {
+                jobs: [],
+                total: 0,
+                success: false,
+                executionTime: 0
+            },
+            upwork: {
+                jobs: [],
+                total: 0,
+                success: false,
+                executionTime: 0
+            },
+            summary: {
+                totalJobs: 0,
+                highHourlyJobs: 0,
+                averageHourlyRate: 0,
+                executionTime: 0,
+                timestamp: new Date()
+            }
+        };
+
+        // Upwork検索実行
+        if (this.config.enabled.upwork) {
+            const upworkStartTime = Date.now();
+            try {
+                await this.upworkService.authenticate();
+
+                const searchParams: Parameters<typeof this.upworkService.searchJobs>[0] = {
+                    limit: params.maxJobsPerSource || this.config.limits.maxJobsPerSource
+                };
+
+                if (params.keywords && params.keywords.length > 0) {
+                    searchParams.query = params.keywords.join(' ');
+                }
+
+                const upworkJobs = await this.upworkService.searchJobs(searchParams);
+
+                result.upwork = {
+                    jobs: upworkJobs,
+                    total: upworkJobs.length,
+                    success: true,
+                    executionTime: Date.now() - upworkStartTime
+                };
+
+            } catch (error) {
+                result.upwork = {
+                    jobs: [],
+                    total: 0,
+                    success: false,
+                    error: error instanceof Error ? error.message : 'Upwork search failed',
+                    executionTime: Date.now() - upworkStartTime
+                };
+            }
+        }
+
+        // CrowdWorks検索実行（将来実装）
+        if (this.config.enabled.crowdworks && this.crowdworksService) {
+            const crowdworksStartTime = Date.now();
+            try {
+                // TODO: CrowdWorksServiceとの統合
+                result.crowdworks = {
+                    jobs: [],
+                    total: 0,
+                    success: true,
+                    executionTime: Date.now() - crowdworksStartTime
+                };
+            } catch (error) {
+                result.crowdworks = {
+                    jobs: [],
+                    total: 0,
+                    success: false,
+                    error: error instanceof Error ? error.message : 'CrowdWorks search failed',
+                    executionTime: Date.now() - crowdworksStartTime
+                };
+            }
+        }
+
+        // サマリー計算
+        const allUpworkJobs = result.upwork.jobs;
+        const minHourlyRate = params.minHourlyRateJPY || this.config.filtering.minHourlyRateJPY;
+
+        let highHourlyCount = 0;
+        let totalHourlyRates: number[] = [];
+
+        // Upwork案件の高時給判定
+        allUpworkJobs.forEach(job => {
+            const hourlyRateJPY = CurrencyService.calculateUpworkHourlyRateJPY(
+                job,
+                this.config.currency.exchangeRateUSDToJPY
+            );
+
+            if (hourlyRateJPY) {
+                totalHourlyRates.push(hourlyRateJPY);
+                if (hourlyRateJPY >= minHourlyRate) {
+                    highHourlyCount++;
+                }
+            }
+        });
+
+        result.summary = {
+            totalJobs: result.crowdworks.total + result.upwork.total,
+            highHourlyJobs: highHourlyCount,
+            averageHourlyRate: totalHourlyRates.length > 0
+                ? Math.round(totalHourlyRates.reduce((a, b) => a + b, 0) / totalHourlyRates.length)
+                : 0,
+            executionTime: Date.now() - startTime,
+            timestamp: new Date()
+        };
+
+        return result;
+    }
+
+    /**
+     * 高時給案件のフィルタリング
+     */
+    filterHighValueJobs(
+        result: IntegratedJobSearchResult,
+        minHourlyRateJPY: number
+    ): { crowdworks: JobData[]; upwork: UpworkJobData[] } {
+
+        const highValueUpworkJobs = result.upwork.jobs.filter(job => {
+            const hourlyRateJPY = CurrencyService.calculateUpworkHourlyRateJPY(
+                job,
+                this.config.currency.exchangeRateUSDToJPY
+            );
+            return hourlyRateJPY && hourlyRateJPY >= minHourlyRateJPY;
+        });
+
+        // TODO: CrowdWorks案件のフィルタリング実装
+
+        return {
+            crowdworks: [], // TODO: 実装後に更新
+            upwork: highValueUpworkJobs
+        };
+    }
+
+    /**
+     * 統合レポート生成
+     */
+    async generateReport(params: {
+        minHourlyRate: number;
+        categories: string[];
+        maxJobsPerSource: number;
+    }): Promise<IntegratedJobReport> {
+
+        const searchResult = await this.searchJobs({
+            categories: params.categories,
+            minHourlyRateJPY: params.minHourlyRate,
+            maxJobsPerSource: params.maxJobsPerSource
+        });
+
+        const highValueJobs = this.filterHighValueJobs(searchResult, params.minHourlyRate);
+
+        return {
+            id: `report-${Date.now()}`,
+            generatedAt: new Date(),
+            criteria: {
+                minHourlyRate: params.minHourlyRate,
+                categories: params.categories,
+                maxJobsPerSource: params.maxJobsPerSource
+            },
+            results: searchResult,
+            highValueJobs,
+            analysis: {
+                marketTrends: this.generateMarketAnalysis(searchResult),
+                recommendations: this.generateRecommendations(highValueJobs),
+                alerts: this.generateAlerts(searchResult)
+            }
+        };
+    }
+
+    private generateMarketAnalysis(result: IntegratedJobSearchResult): string {
+        const { summary } = result;
+
+        if (summary.totalJobs === 0) {
+            return '案件データが取得できませんでした。';
+        }
+
+        const highValueRatio = (summary.highHourlyJobs / summary.totalJobs * 100).toFixed(1);
+
+        return `総案件数: ${summary.totalJobs}件、高時給案件率: ${highValueRatio}%、平均時給: ${summary.averageHourlyRate.toLocaleString()}円`;
+    }
+
+    private generateRecommendations(highValueJobs: { crowdworks: JobData[]; upwork: UpworkJobData[] }): string[] {
+        const recommendations: string[] = [];
+
+        if (highValueJobs.upwork.length > 0) {
+            recommendations.push(`Upworkで${highValueJobs.upwork.length}件の高時給案件を発見`);
+
+            // スキル分析
+            const skillCounts: { [skill: string]: number } = {};
+            highValueJobs.upwork.forEach(job => {
+                job.skills.forEach(skill => {
+                    skillCounts[skill] = (skillCounts[skill] || 0) + 1;
+                });
+            });
+
+            const topSkills = Object.entries(skillCounts)
+                .sort(([, a], [, b]) => b - a)
+                .slice(0, 3)
+                .map(([skill]) => skill);
+
+            if (topSkills.length > 0) {
+                recommendations.push(`需要の高いスキル: ${topSkills.join(', ')}`);
+            }
+        }
+
+        if (recommendations.length === 0) {
+            recommendations.push('現在、条件に合う高時給案件が見つかりませんでした。');
+        }
+
+        return recommendations;
+    }
+
+    private generateAlerts(result: IntegratedJobSearchResult): string[] {
+        const alerts: string[] = [];
+
+        if (!result.upwork.success) {
+            alerts.push(`Upwork検索でエラーが発生: ${result.upwork.error || '不明なエラー'}`);
+        }
+
+        if (!result.crowdworks.success) {
+            alerts.push(`CrowdWorks検索でエラーが発生: ${result.crowdworks.error || '不明なエラー'}`);
+        }
+
+        if (result.summary.totalJobs === 0) {
+            alerts.push('案件が見つかりませんでした。検索条件を確認してください。');
+        }
+
+        return alerts;
+    }
+}
+
+// Services module exports
+export { UpworkService, CurrencyService, IntegratedJobSearchService };
+export { AppliedJobsService } from './AppliedJobsService';
 </file>
 
 <file path="src/utils/index.ts">
@@ -944,642 +2063,6 @@ module.exports = {
     globalSetup: undefined,
     globalTeardown: undefined
 };
-</file>
-
-<file path="scripts/calculate-recommendation-score.ts">
-require('dotenv').config();
-
-import { readFileSync, writeFileSync } from 'fs';
-import { OpenAI } from 'openai';
-
-// 型定義
-interface AnalysisResult {
-    jobId: string;
-    title: string;
-    工数_見積もり: string;
-    想定時給: string;
-    難易度: string;
-    gpt_summary: string;
-    category?: string;
-}
-
-interface ScoredJob extends AnalysisResult {
-    hourly_rate_numeric: number;
-    workload_hours: number;
-    difficulty_score: number;
-    skill_fit_score: number;
-    recommendation_score: number;
-    link: string;
-    original_title?: string;
-    proposal_greeting?: string;
-    specification_questions?: string;
-    skill_analysis?: string;
-}
-
-// .envからAPIキー取得
-const apiKey = process.env['OPENAI_API_KEY'];
-if (!apiKey) {
-    console.error('❌ OPENAI_API_KEYが設定されていません');
-    process.exit(1);
-}
-
-const openai = new OpenAI({ apiKey });
-
-// 時給文字列を数値に変換する関数
-function parseHourlyRate(hourlyRateString: string): number {
-    if (!hourlyRateString || hourlyRateString.trim() === '' || hourlyRateString === '0円') {
-        return 0;
-    }
-
-    const match = hourlyRateString.match(/([0-9,]+)/);
-    if (match && match[1]) {
-        const numericString = match[1].replace(/,/g, '');
-        return parseInt(numericString, 10);
-    }
-
-    return 0;
-}
-
-// 工数文字列を数値（時間）に変換する関数
-function parseWorkloadHours(workloadString: string): number {
-    if (!workloadString || workloadString.trim() === '') {
-        return 40; // デフォルト値
-    }
-
-    // 「120時間」「2週間」「1ヶ月」などを解析
-    const hourMatch = workloadString.match(/([0-9,]+)\s*時間/);
-    if (hourMatch && hourMatch[1]) {
-        return parseInt(hourMatch[1].replace(/,/g, ''), 10);
-    }
-
-    const dayMatch = workloadString.match(/([0-9,]+)\s*日/);
-    if (dayMatch && dayMatch[1]) {
-        return parseInt(dayMatch[1].replace(/,/g, ''), 10) * 8; // 1日8時間想定
-    }
-
-    const weekMatch = workloadString.match(/([0-9,]+)\s*週間/);
-    if (weekMatch && weekMatch[1]) {
-        return parseInt(weekMatch[1].replace(/,/g, ''), 10) * 40; // 1週間40時間想定
-    }
-
-    const monthMatch = workloadString.match(/([0-9,]+)\s*ヶ?月/);
-    if (monthMatch && monthMatch[1]) {
-        return parseInt(monthMatch[1].replace(/,/g, ''), 10) * 160; // 1ヶ月160時間想定
-    }
-
-    return 40; // デフォルト値
-}
-
-// 難易度を点数に変換する関数（簡単ほど高得点）
-function parseDifficultyScore(difficultyString: string): number {
-    const difficulty = difficultyString.trim().toLowerCase();
-
-    if (difficulty.includes('簡単') || difficulty.includes('かんたん')) {
-        return 10; // 簡単 = 高得点
-    } else if (difficulty.includes('普通') || difficulty.includes('ふつう') || difficulty.includes('標準')) {
-        return 6; // 普通 = 中得点
-    } else if (difficulty.includes('難しい') || difficulty.includes('むずかしい') || difficulty.includes('困難')) {
-        return 3; // 難しい = 低得点
-    }
-
-    return 5; // 不明な場合はデフォルト
-}
-
-// ===== 評価係数設定 =====
-// 係数を変更することで評価の重要度を調整できます
-const EVALUATION_COEFFICIENTS = {
-    HOURLY: 2.0,          // 時給重視度
-    WORKLOAD: 1.0,        // 工数バランス重視度
-    SKILL_FIT: 2.5        // スキル適性重視度
-    // 難易度は表示のみで点数計算から除外
-};
-
-// おすすめ点数を計算する関数（スキル適性考慮版）
-function calculateRecommendationScore(
-    hourlyRate: number,
-    workloadHours: number,
-    skillFitScore: number
-): number {
-    // 時給スコア（0-10点）: 時給が高いほど高得点
-    let hourlyScore = 0;
-    if (hourlyRate >= 4000) hourlyScore = 10;
-    else if (hourlyRate >= 3500) hourlyScore = 9;
-    else if (hourlyRate >= 3000) hourlyScore = 8;
-    else if (hourlyRate >= 2500) hourlyScore = 7;
-    else if (hourlyRate >= 2000) hourlyScore = 6;
-    else if (hourlyRate >= 1500) hourlyScore = 5;
-    else if (hourlyRate >= 1000) hourlyScore = 4;
-    else if (hourlyRate >= 500) hourlyScore = 3;
-    else if (hourlyRate > 0) hourlyScore = 2;
-    else hourlyScore = 0;
-
-    // 工数スコア（0-10点）: 適度な工数（20-80時間）が高得点
-    let workloadScore = 0;
-    if (workloadHours >= 20 && workloadHours <= 80) {
-        workloadScore = 10; // 最適範囲
-    } else if (workloadHours >= 10 && workloadHours <= 120) {
-        workloadScore = 8; // 良い範囲
-    } else if (workloadHours >= 5 && workloadHours <= 160) {
-        workloadScore = 6; // 許容範囲
-    } else if (workloadHours > 0 && workloadHours <= 200) {
-        workloadScore = 4; // 微妙な範囲
-    } else {
-        workloadScore = 2; // 極端な工数
-    }
-
-    // 係数システムによる総合スコア計算（スキル適性重視）
-    const totalScore = (hourlyScore * EVALUATION_COEFFICIENTS.HOURLY) +
-        (workloadScore * EVALUATION_COEFFICIENTS.WORKLOAD) +
-        (skillFitScore * EVALUATION_COEFFICIENTS.SKILL_FIT);
-
-    return Math.round(totalScore * 10) / 10; // 小数点1位まで
-}
-
-// 詳細データから元のタイトルを取得する関数
-function getOriginalJobData(jobId: string, detailsData: any[]): any {
-    return detailsData.find(job => job.jobId === jobId);
-}
-
-// 並列実行制御クラス
-class ConcurrencyLimiter {
-    private runningCount = 0;
-    private queue: (() => Promise<void>)[] = [];
-
-    constructor(private maxConcurrency: number) { }
-
-    async execute<T>(task: () => Promise<T>): Promise<T> {
-        return new Promise<T>((resolve, reject) => {
-            const wrappedTask = async () => {
-                try {
-                    this.runningCount++;
-                    const result = await task();
-                    resolve(result);
-                } catch (error) {
-                    reject(error);
-                } finally {
-                    this.runningCount--;
-                    this.processQueue();
-                }
-            };
-
-            if (this.runningCount < this.maxConcurrency) {
-                wrappedTask();
-            } else {
-                this.queue.push(wrappedTask);
-            }
-        });
-    }
-
-    private processQueue() {
-        if (this.queue.length > 0 && this.runningCount < this.maxConcurrency) {
-            const nextTask = this.queue.shift();
-            if (nextTask) {
-                nextTask();
-            }
-        }
-    }
-}
-
-// メイン処理（非同期版）
-async function calculateRecommendationScores(): Promise<void> {
-    console.log('🔄 おすすめ点数計算を開始...');
-
-    const scoredJobs: ScoredJob[] = [];
-
-    // 詳細データも読み込む（元のタイトル取得用）
-    let ecDetailsData: any[] = [];
-    let webDetailsData: any[] = [];
-
-    // EC詳細データの読み込み
-    try {
-        ecDetailsData = JSON.parse(readFileSync('output/details-ec.json', 'utf8'));
-        console.log(`📂 EC詳細データ: ${ecDetailsData.length}件読み込み`);
-    } catch (error) {
-        console.log(`⚠️ EC詳細データの読み込みに失敗: ${error}`);
-    }
-
-    // Web製品詳細データの読み込み
-    try {
-        webDetailsData = JSON.parse(readFileSync('output/details-web_products.json', 'utf8'));
-        console.log(`📂 Web製品詳細データ: ${webDetailsData.length}件読み込み`);
-    } catch (error) {
-        console.log(`⚠️ Web製品詳細データの読み込みに失敗: ${error}`);
-    }
-
-    // AI分析済みデータの読み込み（オプション）
-    let ecAnalyzedData: any[] = [];
-    let webAnalyzedData: any[] = [];
-
-    try {
-        ecAnalyzedData = JSON.parse(readFileSync('output/analyzed-ec.json', 'utf8'));
-        console.log(`🧠 EC AI分析データ: ${ecAnalyzedData.length}件読み込み`);
-    } catch (error) {
-        console.log(`⚠️ ECカテゴリファイルが見つかりません: analyzed-ec.json`);
-    }
-
-    try {
-        webAnalyzedData = JSON.parse(readFileSync('output/analyzed-web_products.json', 'utf8'));
-        console.log(`🧠 Web製品 AI分析データ: ${webAnalyzedData.length}件読み込み`);
-    } catch (error) {
-        console.log(`⚠️ Web製品カテゴリファイルが見つかりません: analyzed-web_products.json`);
-    }
-
-    // ECカテゴリの分析データ読み込み
-    try {
-        ecAnalyzedData.forEach(item => {
-            const hourlyRate = parseHourlyRate(item.想定時給);
-            const workloadHours = parseWorkloadHours(item.工数_見積もり);
-            const difficultyScore = parseDifficultyScore(item.難易度);
-            const skillFitScore = 5; // 仮のスキル適性スコア（後で更新）
-            const recommendationScore = calculateRecommendationScore(hourlyRate, workloadHours, skillFitScore);
-
-            const originalJob = getOriginalJobData(item.jobId, ecDetailsData);
-
-            scoredJobs.push({
-                ...item,
-                category: 'EC',
-                hourly_rate_numeric: hourlyRate,
-                workload_hours: workloadHours,
-                difficulty_score: difficultyScore,
-                skill_fit_score: skillFitScore,
-                recommendation_score: recommendationScore,
-                link: `https://crowdworks.jp/public/jobs/${item.jobId}`,
-                original_title: originalJob?.title || item.title
-            });
-        });
-        console.log(`✅ ECカテゴリ: ${ecAnalyzedData.length}件処理完了`);
-    } catch (e) {
-        console.log('⚠️ ECカテゴリファイルが見つかりません: analyzed-ec.json');
-    }
-
-    // Web製品カテゴリの分析データ読み込み
-    try {
-        webAnalyzedData.forEach(item => {
-            const hourlyRate = parseHourlyRate(item.想定時給);
-            const workloadHours = parseWorkloadHours(item.工数_見積もり);
-            const difficultyScore = parseDifficultyScore(item.難易度);
-            const skillFitScore = 5; // 仮のスキル適性スコア（後で更新）
-            const recommendationScore = calculateRecommendationScore(hourlyRate, workloadHours, skillFitScore);
-
-            const originalJob = getOriginalJobData(item.jobId, webDetailsData);
-
-            scoredJobs.push({
-                ...item,
-                category: 'Web製品',
-                hourly_rate_numeric: hourlyRate,
-                workload_hours: workloadHours,
-                difficulty_score: difficultyScore,
-                skill_fit_score: skillFitScore,
-                recommendation_score: recommendationScore,
-                link: `https://crowdworks.jp/public/jobs/${item.jobId}`,
-                original_title: originalJob?.title || item.title
-            });
-        });
-        console.log(`✅ Web製品カテゴリ: ${webAnalyzedData.length}件処理完了`);
-    } catch (e) {
-        console.log('⚠️ Web製品カテゴリファイルが見つかりません: analyzed-web_products.json');
-    }
-
-    if (scoredJobs.length === 0) {
-        console.error('❌ データが読み込めませんでした');
-        return;
-    }
-
-    // 全案件のスキル適性評価を実行
-    console.log(`\n🧠 全案件のスキル適性評価中（最大5件並列）...`);
-
-    const limiter = new ConcurrencyLimiter(5);
-    let skillAnalysisCount = 0;
-
-    const skillAnalysisPromises = scoredJobs.map(async (job, index) => {
-        try {
-            const allDetailsData = [...ecDetailsData, ...webDetailsData];
-            const originalJob = getOriginalJobData(job.jobId, allDetailsData);
-
-            const { score, analysis } = await limiter.execute(() =>
-                analyzeSkillFit(job, originalJob)
-            );
-
-            job.skill_fit_score = score;
-            job.skill_analysis = analysis;
-
-            // スキル適性スコアでおすすめ点数を再計算
-            job.recommendation_score = calculateRecommendationScore(
-                job.hourly_rate_numeric,
-                job.workload_hours,
-                score
-            );
-
-            skillAnalysisCount++;
-            console.log(`✅ [${skillAnalysisCount}/${scoredJobs.length}] ${job.original_title?.substring(0, 40)}... スキル適性評価完了`);
-
-            return { success: true, index };
-        } catch (error) {
-            console.error(`❌ [${index + 1}/${scoredJobs.length}] スキル適性評価エラー:`, error);
-            return { success: false, index };
-        }
-    });
-
-    await Promise.allSettled(skillAnalysisPromises);
-    console.log(`🎯 スキル適性評価完了: ${skillAnalysisCount}/${scoredJobs.length}件成功`);
-
-    // おすすめ点数順でソート（高得点順）
-    const sortedJobs = scoredJobs.sort((a, b) => b.recommendation_score - a.recommendation_score);
-
-    // 統計情報表示
-    const validJobs = sortedJobs.filter(j => j.hourly_rate_numeric > 0);
-    if (validJobs.length > 0) {
-        const maxScore = Math.max(...validJobs.map(j => j.recommendation_score));
-        const minScore = Math.min(...validJobs.map(j => j.recommendation_score));
-        const avgScore = Math.round((validJobs.reduce((sum, j) => sum + j.recommendation_score, 0) / validJobs.length) * 10) / 10;
-        const avgSkillFit = Math.round((validJobs.reduce((sum, j) => sum + j.skill_fit_score, 0) / validJobs.length) * 10) / 10;
-
-        console.log(`\n📈 統計情報:`);
-        console.log(`最高おすすめ点数: ${maxScore}点`);
-        console.log(`最低おすすめ点数: ${minScore}点`);
-        console.log(`平均おすすめ点数: ${avgScore}点`);
-        console.log(`平均スキル適性: ${avgSkillFit}点`);
-        console.log(`有効案件: ${validJobs.length}件 / 全${sortedJobs.length}件`);
-    }
-
-    // TOP10案件に提案文生成を追加
-    const top10Jobs = sortedJobs.slice(0, 10);
-    console.log(`\n🤖 TOP10案件の提案文生成中（最大3件並列）...`);
-
-    const proposalLimiter = new ConcurrencyLimiter(3); // 提案文生成は3件並列
-    let proposalCount = 0;
-
-    const proposalPromises = top10Jobs.map(async (job, index) => {
-        try {
-            const allDetailsData = [...ecDetailsData, ...webDetailsData];
-            const originalJob = getOriginalJobData(job.jobId, allDetailsData);
-
-            const { greeting, questions } = await proposalLimiter.execute(() =>
-                generateProposalContent(job, originalJob)
-            );
-
-            job.proposal_greeting = greeting;
-            job.specification_questions = questions;
-
-            proposalCount++;
-            console.log(`✅ [${proposalCount}/10] ${job.original_title?.substring(0, 40)}... 提案文生成完了`);
-
-            return { success: true, index };
-        } catch (error) {
-            console.error(`❌ [${index + 1}/10] 提案文生成エラー:`, error);
-            return { success: false, index };
-        }
-    });
-
-    await Promise.allSettled(proposalPromises);
-    console.log(`🎯 提案文生成完了: ${proposalCount}/10件成功`);
-
-    // 結果表示（上位20件）
-    console.log(`\n🏆 Webエンジニア向けおすすめ案件ランキング TOP20:\n`);
-
-    sortedJobs.slice(0, 20).forEach((job, index) => {
-        const rank = index + 1;
-        const score = job.recommendation_score;
-        const hourlyRate = job.hourly_rate_numeric.toLocaleString() + '円';
-        const category = job.category || 'N/A';
-        const difficulty = job.難易度 || 'N/A';
-        const workload = job.工数_見積もり || 'N/A';
-        const skillFit = job.skill_fit_score?.toFixed(1) || 'N/A';
-        const summary = (job.gpt_summary || '').substring(0, 60) + '...';
-
-        console.log(`${rank}位: ${score}点 | ${hourlyRate} (${category}) | 難易度: ${difficulty} | スキル適性: ${skillFit}点`);
-        console.log(`   工数: ${workload}`);
-        console.log(`   概要: ${summary}`);
-
-        if (job.skill_analysis) {
-            console.log(`   🧠 適性: ${job.skill_analysis.substring(0, 80)}...`);
-        }
-
-        // TOP10なら提案文も表示
-        if (rank <= 10 && job.proposal_greeting) {
-            console.log(`   💬 提案文: ${job.proposal_greeting.substring(0, 60)}...`);
-        }
-        console.log('');
-    });
-
-    // 結果をJSONファイルに保存
-    writeFileSync('output/jobs-with-recommendation-scores.json', JSON.stringify(sortedJobs, null, 2), 'utf8');
-    console.log(`💾 結果を保存: output/jobs-with-recommendation-scores.json (${sortedJobs.length}件)`);
-
-    // Markdownファイルに保存
-    const markdown = generateRecommendationMarkdown(sortedJobs.slice(0, 30)); // TOP30
-    writeFileSync('output/recommended-jobs-top30.md', markdown, 'utf8');
-    console.log(`📄 Markdownファイルを保存: output/recommended-jobs-top30.md`);
-}
-
-// Markdown生成関数
-function generateRecommendationMarkdown(jobs: ScoredJob[]): string {
-    const currentDate = new Date().toISOString().split('T')[0];
-
-    let markdown = `# Webエンジニア向けおすすめ案件ランキング TOP30\n\n`;
-    markdown += `> 生成日: ${currentDate}  \n`;
-    markdown += `> 評価基準: 係数システム（時給×${EVALUATION_COEFFICIENTS.HOURLY} + 工数×${EVALUATION_COEFFICIENTS.WORKLOAD} + スキル適性×${EVALUATION_COEFFICIENTS.SKILL_FIT}）  \n`;
-    markdown += `> 対象者: 高スキルWebエンジニア（デザインスキル低め）  \n`;
-    markdown += `> 最高得点: ${Math.max(...jobs.map(j => j.recommendation_score))}点  \n`;
-    markdown += `> 対象件数: ${jobs.length}件\n`;
-    markdown += `> 💬 TOP10案件には戦略的提案文・質問を生成\n\n`;
-
-    markdown += `## 👨‍💻 対象スキルプロフィール\n\n`;
-    markdown += `- **高スキルWebエンジニア**（フロントエンド・バックエンド両方）\n`;
-    markdown += `- **得意分野**: プログラミング・システム開発・API連携・DB設計・パフォーマンス最適化\n`;
-    markdown += `- **苦手分野**: グラフィックデザイン・UI/UXデザイン（CSSスタイリング程度なら対応可能）\n\n`;
-
-    markdown += `## 📊 評価基準の詳細\n\n`;
-    markdown += `### 💰 時給スコア（係数：${EVALUATION_COEFFICIENTS.HOURLY}）\n`;
-    markdown += `- 4000円以上: 10点 → ${10 * EVALUATION_COEFFICIENTS.HOURLY}点\n`;
-    markdown += `- 3500円以上: 9点 → ${9 * EVALUATION_COEFFICIENTS.HOURLY}点\n`;
-    markdown += `- 3000円以上: 8点 → ${8 * EVALUATION_COEFFICIENTS.HOURLY}点\n`;
-    markdown += `- 2500円以上: 7点 → ${7 * EVALUATION_COEFFICIENTS.HOURLY}点\n`;
-    markdown += `- 2000円以上: 6点 → ${6 * EVALUATION_COEFFICIENTS.HOURLY}点\n\n`;
-
-    markdown += `### ⏰ 工数スコア（係数：${EVALUATION_COEFFICIENTS.WORKLOAD}）\n`;
-    markdown += `- 20-80時間: 10点 → ${10 * EVALUATION_COEFFICIENTS.WORKLOAD}点（最適な工数）\n`;
-    markdown += `- 10-120時間: 8点 → ${8 * EVALUATION_COEFFICIENTS.WORKLOAD}点（良い範囲）\n`;
-    markdown += `- 5-160時間: 6点 → ${6 * EVALUATION_COEFFICIENTS.WORKLOAD}点（許容範囲）\n\n`;
-
-    markdown += `### 🧠 スキル適性スコア（係数：${EVALUATION_COEFFICIENTS.SKILL_FIT}）\n`;
-    markdown += `- 10点: 技術力を最大限活かせる案件（システム開発、API連携、パフォーマンス改善等）\n`;
-    markdown += `- 8-9点: 技術スキルが重要な案件（WordPressカスタマイズ、EC機能開発等）\n`;
-    markdown += `- 6-7点: 技術とデザインが半々（既存サイト修正、簡単なスタイリング等）\n`;
-    markdown += `- 4-5点: デザイン要素が多い（レイアウト作成、ビジュアル重視等）\n`;
-    markdown += `- 1-3点: 純粋なデザイン案件（グラフィック制作、UI/UXデザイン等）\n`;
-    markdown += `- 0点: 完全にスキル外（イラスト制作、動画編集等）\n\n`;
-
-    markdown += `## 🔧 係数の意味\n\n`;
-    markdown += `- **時給係数 ${EVALUATION_COEFFICIENTS.HOURLY}**: 収益性重視\n`;
-    markdown += `- **工数係数 ${EVALUATION_COEFFICIENTS.WORKLOAD}**: 適度な作業量をバランス評価\n`;
-    markdown += `- **スキル適性係数 ${EVALUATION_COEFFICIENTS.SKILL_FIT}**: スキル適性を最重視（技術案件を優遇）\n`;
-    markdown += `- **難易度**: 参考情報として表示（点数計算には含めない）\n\n`;
-
-    const maxScore = (10 * EVALUATION_COEFFICIENTS.HOURLY) + (10 * EVALUATION_COEFFICIENTS.WORKLOAD) + (10 * EVALUATION_COEFFICIENTS.SKILL_FIT);
-    markdown += `**最高理論値**: ${10 * EVALUATION_COEFFICIENTS.HOURLY} + ${10 * EVALUATION_COEFFICIENTS.WORKLOAD} + ${10 * EVALUATION_COEFFICIENTS.SKILL_FIT} = ${maxScore}点\n\n`;
-
-    markdown += `## 🏆 ランキング\n\n`;
-
-    jobs.forEach((job, index) => {
-        const rank = index + 1;
-        markdown += `### ${rank}位: ${job.recommendation_score}点 - [${job.original_title}](${job.link})\n\n`;
-        markdown += `**💰 想定時給:** ${job.hourly_rate_numeric.toLocaleString()}円  \n`;
-        markdown += `**🎯 難易度:** ${job.難易度}  \n`;
-        markdown += `**⏰ 見積工数:** ${job.工数_見積もり}  \n`;
-        markdown += `**🧠 スキル適性:** ${job.skill_fit_score?.toFixed(1)}点/10点  \n`;
-        markdown += `**🏷️ カテゴリ:** ${job.category}  \n`;
-        markdown += `**🔗 案件URL:** ${job.link}\n\n`;
-
-        markdown += `**📝 分析概要:**  \n`;
-        markdown += `${job.gpt_summary}\n\n`;
-
-        if (job.skill_analysis) {
-            markdown += `**🧠 スキル適性分析:**  \n`;
-            markdown += `${job.skill_analysis}\n\n`;
-        }
-
-        // TOP10なら提案文と質問も追加
-        if (rank <= 10 && job.proposal_greeting && job.specification_questions) {
-            markdown += `**💬 戦略的提案文:**  \n`;
-            markdown += `${job.proposal_greeting}\n\n`;
-
-            markdown += `**❓ 仕様確認質問:**  \n`;
-            markdown += `${job.specification_questions}\n\n`;
-        }
-
-        markdown += `---\n\n`;
-    });
-
-    return markdown;
-}
-
-// GPTで提案用挨拶文と仕様質問を生成する関数
-async function generateProposalContent(job: AnalysisResult, originalJob: any): Promise<{ greeting: string; questions: string }> {
-    const prompt = `以下のクラウドワークス案件に応募する際の戦略的な挨拶文と仕様確認質問を作成してください。
-
-【案件情報】
-タイトル: ${job.title}
-詳細説明: ${originalJob?.detailedDescription || '詳細不明'}
-想定時給: ${job.想定時給}
-見積工数: ${job.工数_見積もり}
-難易度: ${job.難易度}
-
-【要求内容】
-1. **挨拶文**: プロフェッショナルで親しみやすい、簡潔な自己紹介（2-3行）
-2. **仕様確認質問**: 案件を確実に成功させるための具体的な質問（3-5個）
-
-【挨拶文のポイント】
-- 経験と専門性をアピール
-- 案件への真剣な取り組み姿勢を示す
-- クライアントの課題解決に焦点
-
-【質問のポイント】
-- 曖昧な部分の明確化
-- 成果物の具体的な要求仕様
-- 納期やコミュニケーション方法
-- 想定される課題やリスクの確認
-- 成功基準の明確化
-
-【出力フォーマット】
-挨拶文:
-<挨拶文をここに>
-
-質問:
-1. <質問1>
-2. <質問2>
-3. <質問3>
-4. <質問4>
-5. <質問5>`;
-
-    try {
-        const res = await openai.chat.completions.create({
-            model: 'gpt-4o',
-            messages: [
-                { role: 'system', content: 'あなたは経験豊富なフリーランサーで、クラウドワークス案件への効果的な提案文作成の専門家です。クライアントの信頼を得て、案件を受注するための戦略的なコミュニケーションに長けています。' },
-                { role: 'user', content: prompt }
-            ],
-            max_tokens: 800,
-            temperature: 0.3,
-        });
-
-        const text = res.choices[0]?.message?.content || '';
-
-        // 挨拶文と質問を分離
-        const greetingMatch = text.match(/挨拶文[:：]\s*([\s\S]*?)(?=質問[:：]|$)/);
-        const questionsMatch = text.match(/質問[:：]\s*([\s\S]*)/);
-
-        const greeting = greetingMatch?.[1]?.trim() || '';
-        const questions = questionsMatch?.[1]?.trim() || '';
-
-        return { greeting, questions };
-    } catch (e) {
-        console.error(`❌ 提案文生成エラー (${job.jobId}):`, e);
-        return { greeting: '', questions: '' };
-    }
-}
-
-// GPTでスキル適性を評価する関数
-async function analyzeSkillFit(job: AnalysisResult, originalJob: any): Promise<{ score: number; analysis: string }> {
-    const prompt = `以下のクラウドワークス案件を、高スキルWebエンジニアの視点で評価してください。
-
-【依頼者のスキルプロフィール】
-- 高スキルWebエンジニア（フロントエンド・バックエンド両方）
-- プログラミング・システム開発・API連携が得意
-- データベース設計・パフォーマンス最適化などの技術力高い
-- デザインスキルは低い（グラフィックデザイン・UI/UXデザインは苦手）
-- CSSスタイリング程度なら対応可能
-
-【案件情報】
-タイトル: ${job.title}
-詳細説明: ${originalJob?.detailedDescription || '詳細不明'}
-カテゴリ: ${job.category}
-難易度: ${job.難易度}
-
-【評価基準】
-スキル適性スコア（0-10点）:
-- 10点: 技術力を最大限活かせる案件（システム開発、API連携、パフォーマンス改善等）
-- 8-9点: 技術スキルが重要な案件（WordPressカスタマイズ、EC機能開発等）
-- 6-7点: 技術とデザインが半々（既存サイト修正、簡単なスタイリング等）
-- 4-5点: デザイン要素が多い（レイアウト作成、ビジュアル重視等）
-- 1-3点: 純粋なデザイン案件（グラフィック制作、UI/UXデザイン等）
-- 0点: 完全にスキル外（イラスト制作、動画編集等）
-
-【出力フォーマット】
-スコア: <0-10の数値>
-分析: <なぜそのスコアなのか、技術的な観点での評価理由を2-3行で>`;
-
-    try {
-        const res = await openai.chat.completions.create({
-            model: 'gpt-4o',
-            messages: [
-                { role: 'system', content: 'あなたは技術人材のスキルマッチング専門家で、Webエンジニアの技術力と案件要件を正確に評価できます。デザインスキルの有無を考慮した実用的な評価を行います。' },
-                { role: 'user', content: prompt }
-            ],
-            max_tokens: 300,
-            temperature: 0.2,
-        });
-
-        const text = res.choices[0]?.message?.content || '';
-
-        // スコアと分析を分離
-        const scoreMatch = text.match(/スコア[:：]\s*([0-9.]+)/);
-        const analysisMatch = text.match(/分析[:：]\s*([\s\S]*)/);
-
-        const score = scoreMatch?.[1] ? parseFloat(scoreMatch[1]) : 5;
-        const analysis = analysisMatch?.[1]?.trim() || '';
-
-        return { score: Math.max(0, Math.min(10, score)), analysis };
-    } catch (e) {
-        console.error(`❌ スキル適性分析エラー (${job.jobId}):`, e);
-        return { score: 5, analysis: '分析エラー' };
-    }
-}
-
-// 実行
-(async () => {
-    await calculateRecommendationScores();
-})();
 </file>
 
 <file path="scripts/extract-high-hourly-jobs.ts">
@@ -2180,7 +2663,7 @@ export interface JobData {
   skills: string[]; // 必要スキル（最大5個）
   experience: 'beginner' | 'intermediate' | 'expert'; // 経験レベル
   scrapedAt: Date; // 取得日時
-  source: 'crowdworks'; // 取得元（将来拡張用）
+  source: 'crowdworks' | 'upwork'; // 取得元（拡張済み）
 }
 
 // 評価結果型（軽量版）
@@ -2417,6 +2900,129 @@ export const DEFAULT_CONFIG = {
     'app_development'
   ] as const satisfies readonly CrowdWorksCategory[]
 } as const;
+
+// Upwork専用案件データ型
+export interface UpworkJobData {
+  id: string; // Upwork案件ID
+  title: string; // 案件タイトル
+  description: string; // 案件詳細
+  url: string; // Upwork案件URL
+  budget: {
+    type: 'fixed' | 'hourly'; // 固定価格 or 時間単価
+    amount?: number; // 固定価格の場合の金額（USD）
+    min?: number; // 時間単価の場合の最小金額（USD）
+    max?: number; // 時間単価の場合の最大金額（USD）
+  };
+  duration: string; // プロジェクト期間（"Less than 1 month"等）
+  experienceLevel: 'entry' | 'intermediate' | 'expert'; // 経験レベル
+  jobType: 'fixed-price' | 'hourly'; // 案件タイプ
+  category: {
+    name: string; // カテゴリ名
+    subcategory?: string; // サブカテゴリ
+  };
+  client: {
+    country?: string; // クライアントの国
+    memberSince?: string; // 登録日
+    totalSpent?: number; // 総支払額（USD）
+    hireRate?: number; // 採用率（%）
+    totalJobs?: number; // 総案件投稿数
+    avgHourlyPaid?: number; // 平均時給支払額（USD）
+    paymentVerified: boolean; // 支払い認証済み
+  };
+  skills: string[]; // 必要スキル
+  proposals: number; // 提案数
+  postedTime: string; // 投稿時間
+  scrapedAt: Date; // 取得日時
+}
+
+// Upwork API認証情報型
+export interface UpworkCredentials {
+  consumerKey: string;
+  consumerSecret: string;
+  accessToken?: string;
+  accessTokenSecret?: string;
+  // OAuth2用（将来対応）
+  clientId?: string;
+  clientSecret?: string;
+  refreshToken?: string;
+}
+
+// Upworkログイン結果型
+export interface UpworkLoginResult {
+  success: boolean;
+  isAuthenticated: boolean;
+  accessToken?: string;
+  error?: string;
+  executionTime: number;
+}
+
+// 統合案件検索結果型
+export interface IntegratedJobSearchResult {
+  crowdworks: {
+    jobs: JobData[];
+    total: number;
+    success: boolean;
+    error?: string;
+    executionTime: number;
+  };
+  upwork: {
+    jobs: UpworkJobData[];
+    total: number;
+    success: boolean;
+    error?: string;
+    executionTime: number;
+  };
+  summary: {
+    totalJobs: number;
+    highHourlyJobs: number; // 時給一定以上の案件数
+    averageHourlyRate: number; // 平均時給（円換算）
+    executionTime: number;
+    timestamp: Date;
+  };
+}
+
+// 統合案件レポート型
+export interface IntegratedJobReport {
+  id: string; // レポートID
+  generatedAt: Date; // 生成日時
+  criteria: {
+    minHourlyRate: number; // 最低時給条件（円）
+    categories: string[]; // 対象カテゴリ
+    maxJobsPerSource: number; // ソース毎の最大取得件数
+  };
+  results: IntegratedJobSearchResult;
+  highValueJobs: {
+    crowdworks: JobData[];
+    upwork: UpworkJobData[];
+  };
+  analysis: {
+    marketTrends: string; // 市場動向分析
+    recommendations: string[]; // おすすめ案件の理由
+    alerts: string[]; // 注意事項
+  };
+}
+
+// 統合検索設定型
+export interface IntegratedSearchConfig {
+  enabled: {
+    crowdworks: boolean;
+    upwork: boolean;
+  };
+  limits: {
+    maxJobsPerSource: number;
+    maxExecutionTime: number; // 秒
+  };
+  filtering: {
+    minHourlyRateJPY: number; // 最低時給（円）
+    minBudgetJPY: number; // 最低予算（円）
+    excludeKeywords: string[]; // 除外キーワード
+    requiredSkills: string[]; // 必須スキル
+  };
+  currency: {
+    exchangeRateUSDToJPY: number; // USD→JPY換算レート
+    lastUpdated: Date; // レート更新日
+  };
+}
 </file>
 
 <file path="tsconfig.json">
@@ -2940,8 +3546,1219 @@ jobs:
           # TODO: Slack/Discord通知を実装
 </file>
 
+<file path="scripts/calculate-recommendation-score.ts">
+require('dotenv').config();
+
+import { readFileSync, writeFileSync, existsSync, unlinkSync } from 'fs';
+import OpenAI from 'openai';
+// import { chromium } from 'playwright';
+// import { AppliedJobsService } from '../src/services/AppliedJobsService';
+// import { CrowdWorksCredentials } from '../src/types';
+
+// 型定義
+interface AnalysisResult {
+    jobId: string;
+    title: string;
+    工数_見積もり: string;
+    想定時給: string;
+    難易度: string;
+    gpt_summary: string;
+    category?: string;
+}
+
+interface ScoredJob extends AnalysisResult {
+    hourly_rate_numeric: number;
+    workload_hours: number;
+    difficulty_score: number;
+    skill_fit_score: number;
+    recommendation_score: number;
+    link: string;
+    original_title?: string;
+    proposal_greeting?: string;
+    specification_questions?: string;
+    skill_analysis?: string;
+    proposal_amount?: number; // 提案金額
+    estimated_finish_date?: string; // 完了予定日（ISO文字列）
+    delivery_estimate?: string; // 納期見込み
+}
+
+// 処理済み案件のキャッシュインターface
+interface ProcessedJobCache {
+    jobId: string;
+    skill_fit_score: number;
+    skill_analysis: string;
+    proposal_greeting: string;
+    delivery_estimate: string;
+    specification_questions: string;
+    processed_at: string;
+}
+
+// .envからAPIキー取得
+const apiKey = process.env['OPENAI_API_KEY'];
+if (!apiKey) {
+    console.error('❌ OPENAI_API_KEYが設定されていません');
+    process.exit(1);
+}
+
+const openai = new OpenAI({ apiKey });
+
+// 時給文字列を数値に変換する関数
+function parseHourlyRate(hourlyRateString: string): number {
+    if (!hourlyRateString || hourlyRateString.trim() === '' || hourlyRateString === '0円') {
+        return 0;
+    }
+
+    const match = hourlyRateString.match(/([0-9,]+)/);
+    if (match && match[1]) {
+        const numericString = match[1].replace(/,/g, '');
+        return parseInt(numericString, 10);
+    }
+
+    return 0;
+}
+
+// 工数文字列を数値（時間）に変換する関数
+function parseWorkloadHours(workloadString: string): number {
+    if (!workloadString || workloadString.trim() === '') {
+        return 40; // デフォルト値
+    }
+
+    // 「120時間」「2週間」「1ヶ月」などを解析
+    const hourMatch = workloadString.match(/([0-9,]+)\s*時間/);
+    if (hourMatch && hourMatch[1]) {
+        return parseInt(hourMatch[1].replace(/,/g, ''), 10);
+    }
+
+    const dayMatch = workloadString.match(/([0-9,]+)\s*日/);
+    if (dayMatch && dayMatch[1]) {
+        return parseInt(dayMatch[1].replace(/,/g, ''), 10) * 8; // 1日8時間想定
+    }
+
+    const weekMatch = workloadString.match(/([0-9,]+)\s*週間/);
+    if (weekMatch && weekMatch[1]) {
+        return parseInt(weekMatch[1].replace(/,/g, ''), 10) * 40; // 1週間40時間想定
+    }
+
+    const monthMatch = workloadString.match(/([0-9,]+)\s*ヶ?月/);
+    if (monthMatch && monthMatch[1]) {
+        return parseInt(monthMatch[1].replace(/,/g, ''), 10) * 160; // 1ヶ月160時間想定
+    }
+
+    return 40; // デフォルト値
+}
+
+// 難易度を点数に変換する関数（簡単ほど高得点）
+function parseDifficultyScore(difficultyString: string): number {
+    const difficulty = difficultyString.trim().toLowerCase();
+
+    if (difficulty.includes('簡単') || difficulty.includes('かんたん')) {
+        return 10; // 簡単 = 高得点
+    } else if (difficulty.includes('普通') || difficulty.includes('ふつう') || difficulty.includes('標準')) {
+        return 6; // 普通 = 中得点
+    } else if (difficulty.includes('難しい') || difficulty.includes('むずかしい') || difficulty.includes('困難')) {
+        return 3; // 難しい = 低得点
+    }
+
+    return 5; // 不明な場合はデフォルト
+}
+
+// 評価係数の定数
+const EVALUATION_COEFFICIENTS = {
+    HOURLY: 1.0,
+    WORKLOAD: 0.5,
+    SKILL_FIT: 2.0
+};
+
+// 提案文生成対象の最低時給基準
+const PROPOSAL_GENERATION_MIN_HOURLY_RATE = 3000; // 円
+
+// キャッシュファイルのパス
+const PROCESSED_JOBS_CACHE_FILE = 'output/processed-jobs.json';
+
+// 応募済み案件を取得する関数（現在は無効化）
+// async function getAppliedJobIds(): Promise<Set<string>> {
+//     // 応募済み案件の取得処理は現在無効化されています
+//     return new Set<string>();
+// }
+
+// 処理済み案件キャッシュを読み込む
+function loadProcessedJobsCache(): Map<string, ProcessedJobCache> {
+    const cacheMap = new Map<string, ProcessedJobCache>();
+
+    if (existsSync(PROCESSED_JOBS_CACHE_FILE)) {
+        try {
+            const cacheData: ProcessedJobCache[] = JSON.parse(readFileSync(PROCESSED_JOBS_CACHE_FILE, 'utf8'));
+            cacheData.forEach(item => {
+                cacheMap.set(item.jobId, item);
+            });
+            console.log(`📋 処理済み案件キャッシュを読み込み: ${cacheData.length}件`);
+        } catch (error) {
+            console.log(`⚠️ キャッシュファイルの読み込みに失敗: ${error}`);
+        }
+    } else {
+        console.log(`📋 新規キャッシュファイルを作成します`);
+    }
+
+    return cacheMap;
+}
+
+// 処理済み案件キャッシュを保存する
+function saveProcessedJobsCache(cacheMap: Map<string, ProcessedJobCache>): void {
+    try {
+        const cacheArray = Array.from(cacheMap.values());
+        writeFileSync(PROCESSED_JOBS_CACHE_FILE, JSON.stringify(cacheArray, null, 2), 'utf8');
+        console.log(`💾 処理済み案件キャッシュを保存: ${cacheArray.length}件`);
+    } catch (error) {
+        console.error(`❌ キャッシュファイルの保存に失敗: ${error}`);
+    }
+}
+
+// クローズした案件を古い順から削除する
+function cleanupClosedJobs(): void {
+    console.log(`\n🧹 クローズした案件の削除開始...`);
+
+    const now = new Date();
+    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+
+    // 各カテゴリのファイルを処理
+    const categories = ['ec', 'web_products', 'software_development', 'development'];
+    let totalRemovedDetails = 0;
+    let totalRemovedAnalyzed = 0;
+    let totalRemovedCache = 0;
+
+    categories.forEach(category => {
+        // 詳細データのクリーンアップ
+        const detailsFile = `output/details-${category}.json`;
+        if (existsSync(detailsFile)) {
+            try {
+                const detailsData = JSON.parse(readFileSync(detailsFile, 'utf8'));
+                const originalCount = detailsData.length;
+
+                // 応募締切が過ぎた案件を特定
+                const closedJobs: any[] = [];
+                const activeJobs = detailsData.filter((detail: any) => {
+                    if (!detail.applicationDeadline) {
+                        return true; // 締切が設定されていない場合は残す
+                    }
+
+                    try {
+                        // 日本語の日付形式（YYYY年MM月DD日）をパース
+                        const deadlineStr = detail.applicationDeadline;
+                        const match = deadlineStr.match(/(\d{4})年(\d{1,2})月(\d{1,2})日/);
+                        if (!match) {
+                            return true; // パースできない場合は残す
+                        }
+
+                        const year = parseInt(match[1]);
+                        const month = parseInt(match[2]) - 1; // Dateオブジェクトは0ベース
+                        const day = parseInt(match[3]);
+                        const deadline = new Date(year, month, day);
+
+                        if (deadline < today) {
+                            closedJobs.push({
+                                jobId: detail.jobId,
+                                title: detail.title,
+                                deadline: deadline,
+                                applicationDeadline: deadlineStr
+                            });
+                            return false; // 削除対象
+                        }
+                        return true; // 有効案件として残す
+                    } catch (error) {
+                        return true; // エラーの場合は残す
+                    }
+                });
+
+                if (closedJobs.length > 0) {
+                    // 古い順（締切日が早い順）にソート
+                    closedJobs.sort((a, b) => a.deadline.getTime() - b.deadline.getTime());
+
+                    // ファイルを更新
+                    writeFileSync(detailsFile, JSON.stringify(activeJobs, null, 2), 'utf8');
+                    totalRemovedDetails += closedJobs.length;
+
+                    console.log(`🗑️ ${category} 詳細データ: ${closedJobs.length}件削除 (${originalCount}件 → ${activeJobs.length}件)`);
+                    console.log(`   最古の削除案件: ${closedJobs[0].applicationDeadline} - ${closedJobs[0].title.substring(0, 30)}...`);
+                }
+            } catch (error) {
+                console.log(`⚠️ ${category} 詳細データのクリーンアップに失敗: ${error}`);
+            }
+        }
+
+        // 分析データのクリーンアップ
+        const analyzedFile = `output/analyzed-${category}.json`;
+        if (existsSync(analyzedFile)) {
+            try {
+                const analyzedData = JSON.parse(readFileSync(analyzedFile, 'utf8'));
+                const originalCount = analyzedData.length;
+
+                // 対応する詳細データが存在する分析データのみ残す
+                const activeDetailsJobIds = new Set();
+                const detailsFile = `output/details-${category}.json`;
+                if (existsSync(detailsFile)) {
+                    const detailsData = JSON.parse(readFileSync(detailsFile, 'utf8'));
+                    detailsData.forEach((detail: any) => activeDetailsJobIds.add(detail.jobId));
+                }
+
+                const activeAnalyzedData = analyzedData.filter((analyzed: any) =>
+                    activeDetailsJobIds.has(analyzed.jobId)
+                );
+
+                const removedCount = originalCount - activeAnalyzedData.length;
+                if (removedCount > 0) {
+                    writeFileSync(analyzedFile, JSON.stringify(activeAnalyzedData, null, 2), 'utf8');
+                    totalRemovedAnalyzed += removedCount;
+                    console.log(`🗑️ ${category} 分析データ: ${removedCount}件削除 (${originalCount}件 → ${activeAnalyzedData.length}件)`);
+                }
+            } catch (error) {
+                console.log(`⚠️ ${category} 分析データのクリーンアップに失敗: ${error}`);
+            }
+        }
+    });
+
+    // 処理済みキャッシュのクリーンアップ
+    if (existsSync(PROCESSED_JOBS_CACHE_FILE)) {
+        try {
+            const cacheData = JSON.parse(readFileSync(PROCESSED_JOBS_CACHE_FILE, 'utf8'));
+            const originalCount = cacheData.length;
+
+            // 有効な詳細データが存在するキャッシュのみ残す
+            const allActiveJobIds = new Set();
+            categories.forEach(category => {
+                const detailsFile = `output/details-${category}.json`;
+                if (existsSync(detailsFile)) {
+                    const detailsData = JSON.parse(readFileSync(detailsFile, 'utf8'));
+                    detailsData.forEach((detail: any) => allActiveJobIds.add(detail.jobId));
+                }
+            });
+
+            const activeCacheData = cacheData.filter((cache: any) =>
+                allActiveJobIds.has(cache.jobId)
+            );
+
+            const removedCount = originalCount - activeCacheData.length;
+            if (removedCount > 0) {
+                writeFileSync(PROCESSED_JOBS_CACHE_FILE, JSON.stringify(activeCacheData, null, 2), 'utf8');
+                totalRemovedCache += removedCount;
+                console.log(`🗑️ 処理済みキャッシュ: ${removedCount}件削除 (${originalCount}件 → ${activeCacheData.length}件)`);
+            }
+        } catch (error) {
+            console.log(`⚠️ 処理済みキャッシュのクリーンアップに失敗: ${error}`);
+        }
+    }
+
+    const totalRemoved = totalRemovedDetails + totalRemovedAnalyzed + totalRemovedCache;
+    if (totalRemoved > 0) {
+        console.log(`\n🎯 クリーンアップ完了:`);
+        console.log(`   詳細データ: ${totalRemovedDetails}件削除`);
+        console.log(`   分析データ: ${totalRemovedAnalyzed}件削除`);
+        console.log(`   キャッシュ: ${totalRemovedCache}件削除`);
+        console.log(`   合計: ${totalRemoved}件削除`);
+    } else {
+        console.log(`🎉 削除対象のクローズした案件はありませんでした`);
+    }
+}
+
+// おすすめ点数を計算する関数（スキル適性考慮版）
+function calculateRecommendationScore(
+    hourlyRate: number,
+    workloadHours: number,
+    skillFitScore: number
+): number {
+    // 時給スコア（0-10点）: 時給が高いほど高得点
+    let hourlyScore = 0;
+    if (hourlyRate >= 4000) hourlyScore = 10;
+    else if (hourlyRate >= 3500) hourlyScore = 9;
+    else if (hourlyRate >= 3000) hourlyScore = 8;
+    else if (hourlyRate >= 2500) hourlyScore = 7;
+    else if (hourlyRate >= 2000) hourlyScore = 6;
+    else if (hourlyRate >= 1500) hourlyScore = 5;
+    else if (hourlyRate >= 1000) hourlyScore = 4;
+    else if (hourlyRate >= 500) hourlyScore = 3;
+    else if (hourlyRate > 0) hourlyScore = 2;
+    else hourlyScore = 0;
+
+    // 工数スコア（0-10点）: 適度な工数（20-80時間）が高得点
+    let workloadScore = 0;
+    if (workloadHours >= 20 && workloadHours <= 80) {
+        workloadScore = 10; // 最適範囲
+    } else if (workloadHours >= 10 && workloadHours <= 120) {
+        workloadScore = 8; // 良い範囲
+    } else if (workloadHours >= 5 && workloadHours <= 160) {
+        workloadScore = 6; // 許容範囲
+    } else if (workloadHours > 0 && workloadHours <= 200) {
+        workloadScore = 4; // 微妙な範囲
+    } else {
+        workloadScore = 2; // 極端な工数
+    }
+
+    // 係数システムによる総合スコア計算（スキル適性重視）
+    const totalScore = (hourlyScore * EVALUATION_COEFFICIENTS.HOURLY) +
+        (workloadScore * EVALUATION_COEFFICIENTS.WORKLOAD) +
+        (skillFitScore * EVALUATION_COEFFICIENTS.SKILL_FIT);
+
+    return Math.round(totalScore * 10) / 10; // 小数点1位まで
+}
+
+// 詳細データから元のタイトルを取得する関数
+function getOriginalJobData(jobId: string, detailsData: any[]): any {
+    return detailsData.find(job => job.jobId === jobId);
+}
+
+// 並列実行制御クラス
+class ConcurrencyLimiter {
+    private runningCount = 0;
+    private queue: (() => Promise<void>)[] = [];
+
+    constructor(private maxConcurrency: number) { }
+
+    async execute<T>(task: () => Promise<T>): Promise<T> {
+        return new Promise<T>((resolve, reject) => {
+            const wrappedTask = async () => {
+                try {
+                    this.runningCount++;
+                    const result = await task();
+                    resolve(result);
+                } catch (error) {
+                    reject(error);
+                } finally {
+                    this.runningCount--;
+                    this.processQueue();
+                }
+            };
+
+            if (this.runningCount < this.maxConcurrency) {
+                wrappedTask();
+            } else {
+                this.queue.push(wrappedTask);
+            }
+        });
+    }
+
+    private processQueue() {
+        if (this.queue.length > 0 && this.runningCount < this.maxConcurrency) {
+            const nextTask = this.queue.shift();
+            if (nextTask) {
+                nextTask();
+            }
+        }
+    }
+}
+
+// メイン処理（非同期版）
+async function main(): Promise<void> {
+    console.log('🚀 おすすめ案件の計算を開始します...');
+
+    // 応募済み案件IDを取得（現在は無効化）
+    console.log('\n📋 応募済み案件の取得はスキップします（APIキー未設定のため）');
+
+    // クローズした案件を削除
+    cleanupClosedJobs();
+
+    const startTime = Date.now();
+
+    try {
+        // 処理済み案件キャッシュを読み込み
+        const processedCache = loadProcessedJobsCache();
+        console.log(`📋 処理済みキャッシュ読み込み: ${processedCache.size}件`);
+
+        const scoredJobs: ScoredJob[] = [];
+
+        // 詳細データも読み込む（元のタイトル取得用）
+        let ecDetailsData: any[] = [];
+        let webDetailsData: any[] = [];
+        let softwareDetailsData: any[] = [];
+        let developmentDetailsData: any[] = [];
+
+        // EC詳細データの読み込み
+        try {
+            ecDetailsData = JSON.parse(readFileSync('output/details-ec.json', 'utf8'));
+            console.log(`📂 EC詳細データ: ${ecDetailsData.length}件読み込み`);
+        } catch (error) {
+            console.log(`⚠️ EC詳細データの読み込みに失敗: ${error}`);
+        }
+
+        // Web製品詳細データの読み込み
+        try {
+            webDetailsData = JSON.parse(readFileSync('output/details-web_products.json', 'utf8'));
+            console.log(`📂 Web製品詳細データ: ${webDetailsData.length}件読み込み`);
+        } catch (error) {
+            console.log(`⚠️ Web製品詳細データの読み込みに失敗: ${error}`);
+        }
+
+        // ソフトウェア開発詳細データの読み込み
+        try {
+            softwareDetailsData = JSON.parse(readFileSync('output/details-software_development.json', 'utf8'));
+            console.log(`📂 ソフトウェア開発詳細データ: ${softwareDetailsData.length}件読み込み`);
+        } catch (error) {
+            console.log(`⚠️ ソフトウェア開発詳細データの読み込みに失敗: ${error}`);
+        }
+
+        // 開発詳細データの読み込み
+        try {
+            developmentDetailsData = JSON.parse(readFileSync('output/details-development.json', 'utf8'));
+            console.log(`📂 開発詳細データ: ${developmentDetailsData.length}件読み込み`);
+        } catch (error) {
+            console.log(`⚠️ 開発詳細データの読み込みに失敗: ${error}`);
+        }
+
+        // AI分析済みデータの読み込み（オプション）
+        let ecAnalyzedData: any[] = [];
+        let webAnalyzedData: any[] = [];
+        let softwareAnalyzedData: any[] = [];
+        let developmentAnalyzedData: any[] = [];
+
+        try {
+            ecAnalyzedData = JSON.parse(readFileSync('output/analyzed-ec.json', 'utf8'));
+            console.log(`🧠 EC AI分析データ: ${ecAnalyzedData.length}件読み込み`);
+        } catch (error) {
+            console.log(`⚠️ ECカテゴリファイルが見つかりません: analyzed-ec.json`);
+        }
+
+        try {
+            webAnalyzedData = JSON.parse(readFileSync('output/analyzed-web_products.json', 'utf8'));
+            console.log(`🧠 Web製品 AI分析データ: ${webAnalyzedData.length}件読み込み`);
+        } catch (error) {
+            console.log(`⚠️ Web製品カテゴリファイルが見つかりません: analyzed-web_products.json`);
+        }
+
+        try {
+            softwareAnalyzedData = JSON.parse(readFileSync('output/analyzed-software_development.json', 'utf8'));
+            console.log(`🧠 ソフトウェア開発 AI分析データ: ${softwareAnalyzedData.length}件読み込み`);
+        } catch (error) {
+            console.log(`⚠️ ソフトウェア開発カテゴリファイルが見つかりません: analyzed-software_development.json`);
+        }
+
+        try {
+            developmentAnalyzedData = JSON.parse(readFileSync('output/analyzed-development.json', 'utf8'));
+            console.log(`🧠 開発 AI分析データ: ${developmentAnalyzedData.length}件読み込み`);
+        } catch (error) {
+            console.log(`⚠️ 開発カテゴリファイルが見つかりません: analyzed-development.json`);
+        }
+
+        // 全カテゴリの分析データをマージして終了案件を除外
+        const allAnalyzedJobs = [
+            ...ecAnalyzedData,
+            ...webAnalyzedData,
+            ...softwareAnalyzedData,
+            ...developmentAnalyzedData
+        ];
+
+        // 現在の日付を取得
+        const now = new Date();
+        const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+
+        // 全詳細データをマージ
+        const allDetailsData = [
+            ...ecDetailsData,
+            ...webDetailsData,
+            ...softwareDetailsData,
+            ...developmentDetailsData
+        ];
+
+        // 終了している案件を除外（応募締切が過ぎた案件）
+        const activeJobs = allAnalyzedJobs.filter(job => {
+            // 対応する詳細データを検索
+            const detailData = allDetailsData.find(detail => detail.jobId === job.jobId);
+
+            if (!detailData || !detailData.applicationDeadline) {
+                return true; // 詳細データまたは締切が設定されていない場合は有効とする
+            }
+
+            try {
+                // 日本語の日付形式（YYYY年MM月DD日）をパース
+                const deadlineStr = detailData.applicationDeadline;
+                const match = deadlineStr.match(/(\d{4})年(\d{1,2})月(\d{1,2})日/);
+                if (!match) {
+                    return true; // パースできない場合は有効とする
+                }
+
+                const deadlineDate = new Date(
+                    parseInt(match[1]),
+                    parseInt(match[2]) - 1, // 月は0ベース
+                    parseInt(match[3])
+                );
+
+                return deadlineDate >= today; // 今日以降なら有効
+            } catch (error) {
+                console.log(`⚠️ 締切日パースエラー (jobId: ${job.jobId}): ${detailData.applicationDeadline}`);
+                return true; // エラーの場合は有効とする
+            }
+        });
+
+        const excludedCount = allAnalyzedJobs.length - activeJobs.length;
+        console.log(`📅 応募締切チェック: 総${allAnalyzedJobs.length}件中、${excludedCount}件の終了案件を除外`);
+        console.log(`✅ 有効案件: ${activeJobs.length}件で処理を継続`);
+
+        // 応募済み案件を除外（現在は無効化）
+        const notAppliedJobs = activeJobs; // 除外処理をスキップ
+        console.log(`📝 応募済み案件チェック: スキップ（APIキー未設定）`);
+        console.log(`✅ 最終対象案件: ${notAppliedJobs.length}件で処理を継続`);
+
+        console.log(`\n📊 有効案件の分布:`);
+
+        // フィルタリング済みの有効案件のみを処理
+        notAppliedJobs.forEach(item => {
+            const hourlyRate = parseHourlyRate(item.想定時給);
+            const workloadHours = parseWorkloadHours(item.工数_見積もり);
+            const difficultyScore = parseDifficultyScore(item.難易度);
+            const skillFitScore = 5; // 仮のスキル適性スコア（後で更新）
+            const recommendationScore = calculateRecommendationScore(hourlyRate, workloadHours, skillFitScore);
+
+            // カテゴリに応じて詳細データを取得
+            let originalJob;
+            let categoryName = '';
+
+            if (ecAnalyzedData.some(job => job.jobId === item.jobId)) {
+                originalJob = getOriginalJobData(item.jobId, ecDetailsData);
+                categoryName = 'EC';
+            } else if (webAnalyzedData.some(job => job.jobId === item.jobId)) {
+                originalJob = getOriginalJobData(item.jobId, webDetailsData);
+                categoryName = 'Web製品';
+            } else if (softwareAnalyzedData.some(job => job.jobId === item.jobId)) {
+                originalJob = getOriginalJobData(item.jobId, softwareDetailsData);
+                categoryName = 'ソフトウェア開発';
+            } else if (developmentAnalyzedData.some(job => job.jobId === item.jobId)) {
+                originalJob = getOriginalJobData(item.jobId, developmentDetailsData);
+                categoryName = '開発';
+            }
+
+            const proposalAmount = Math.round(workloadHours * PROPOSAL_GENERATION_MIN_HOURLY_RATE);
+            const finishDays = Math.ceil((workloadHours / 6) * 2);
+            const finishDate = new Date();
+            finishDate.setDate(finishDate.getDate() + finishDays);
+            const estimatedFinishDate = finishDate.toISOString().split('T')[0];
+
+            scoredJobs.push({
+                ...item,
+                category: categoryName,
+                hourly_rate_numeric: hourlyRate,
+                workload_hours: workloadHours,
+                difficulty_score: difficultyScore,
+                skill_fit_score: skillFitScore,
+                recommendation_score: recommendationScore,
+                link: `https://crowdworks.jp/public/jobs/${item.jobId}`,
+                original_title: originalJob?.title || item.title,
+                proposal_amount: proposalAmount,
+                estimated_finish_date: estimatedFinishDate
+            });
+        });
+
+        console.log(`✅ 有効案件処理完了: ${notAppliedJobs.length}件`);
+
+        if (scoredJobs.length === 0) {
+            console.error('❌ データが読み込めませんでした');
+            return;
+        }
+
+        // 全案件のスキル適性評価を実行
+        console.log(`\n🧠 全案件のスキル適性評価中（最大10件並列）...`);
+
+        const limiter = new ConcurrencyLimiter(10);
+        let skillAnalysisCount = 0;
+        let cacheHitCount = 0;
+        let newProcessingCount = 0;
+
+        const skillAnalysisPromises = scoredJobs.map(async (job, index) => {
+            try {
+                // キャッシュから既存の結果を確認
+                const cachedResult = processedCache.get(job.jobId);
+
+                if (cachedResult) {
+                    // キャッシュヒット：既存の結果を使用
+                    job.skill_fit_score = cachedResult.skill_fit_score;
+                    job.skill_analysis = cachedResult.skill_analysis;
+
+                    // スキル適性スコアでおすすめ点数を再計算
+                    job.recommendation_score = calculateRecommendationScore(
+                        job.hourly_rate_numeric,
+                        job.workload_hours,
+                        cachedResult.skill_fit_score
+                    );
+
+                    cacheHitCount++;
+                    console.log(`💾 [${skillAnalysisCount + cacheHitCount}/${scoredJobs.length}] ${job.original_title?.substring(0, 40)}... キャッシュから取得`);
+
+                    return { success: true, index, fromCache: true };
+                } else {
+                    // キャッシュミス：新規でGPT処理
+                    const allDetailsData = [...ecDetailsData, ...webDetailsData, ...softwareDetailsData, ...developmentDetailsData];
+                    const originalJob = getOriginalJobData(job.jobId, allDetailsData);
+
+                    const { score, analysis } = await limiter.execute(() =>
+                        analyzeSkillFit(job, originalJob)
+                    );
+
+                    job.skill_fit_score = score;
+                    job.skill_analysis = analysis;
+
+                    // スキル適性スコアでおすすめ点数を再計算
+                    job.recommendation_score = calculateRecommendationScore(
+                        job.hourly_rate_numeric,
+                        job.workload_hours,
+                        score
+                    );
+
+                    // キャッシュに追加（提案文は後で追加）
+                    processedCache.set(job.jobId, {
+                        jobId: job.jobId,
+                        skill_fit_score: score,
+                        skill_analysis: analysis,
+                        proposal_greeting: '', // 後で更新
+                        delivery_estimate: '', // 後で更新
+                        specification_questions: '', // 後で更新
+                        processed_at: new Date().toISOString()
+                    });
+
+                    newProcessingCount++;
+                    console.log(`✅ [${newProcessingCount}/${scoredJobs.length - cacheHitCount}] ${job.original_title?.substring(0, 40)}... スキル適性評価完了（新規処理）`);
+
+                    return { success: true, index, fromCache: false };
+                }
+            } catch (error) {
+                console.error(`❌ [${index + 1}/${scoredJobs.length}] スキル適性評価エラー:`, error);
+                return { success: false, index, fromCache: false };
+            }
+        });
+
+        await Promise.allSettled(skillAnalysisPromises);
+        skillAnalysisCount = cacheHitCount + newProcessingCount;
+        console.log(`🎯 スキル適性評価完了: ${skillAnalysisCount}/${scoredJobs.length}件成功（キャッシュ: ${cacheHitCount}件、新規: ${newProcessingCount}件）`);
+
+        // おすすめ点数順でソート（高得点順）
+        const sortedJobs = scoredJobs.sort((a, b) => b.recommendation_score - a.recommendation_score);
+
+        // 統計情報表示
+        const validJobs = sortedJobs.filter(j => j.hourly_rate_numeric > 0);
+        if (validJobs.length > 0) {
+            const maxScore = Math.max(...validJobs.map(j => j.recommendation_score));
+            const minScore = Math.min(...validJobs.map(j => j.recommendation_score));
+            const avgScore = Math.round((validJobs.reduce((sum, j) => sum + j.recommendation_score, 0) / validJobs.length) * 10) / 10;
+            const avgSkillFit = Math.round((validJobs.reduce((sum, j) => sum + j.skill_fit_score, 0) / validJobs.length) * 10) / 10;
+
+            console.log(`\n📈 統計情報:`);
+            console.log(`最高おすすめ点数: ${maxScore}点`);
+            console.log(`最低おすすめ点数: ${minScore}点`);
+            console.log(`平均おすすめ点数: ${avgScore}点`);
+            console.log(`平均スキル適性: ${avgSkillFit}点`);
+            console.log(`有効案件: ${validJobs.length}件 / 全${sortedJobs.length}件`);
+        }
+
+        // 全案件に提案文生成を追加
+        console.log(`\n🤖 全案件の提案文生成中（最大8件並列）...`);
+        console.log(`対象案件: ${sortedJobs.length}件`);
+
+        const proposalLimiter = new ConcurrencyLimiter(8); // 提案文生成は8件並列
+        let proposalCount = 0;
+        let proposalCacheHitCount = 0;
+        let newProposalProcessingCount = 0;
+
+        const proposalPromises = sortedJobs.map(async (job, index) => {
+            try {
+                // キャッシュから既存の提案文を確認
+                const cachedResult = processedCache.get(job.jobId);
+
+                if (cachedResult && cachedResult.proposal_greeting && cachedResult.proposal_greeting.trim() !== '') {
+                    // キャッシュヒット：既存の提案文を使用
+                    job.proposal_greeting = cachedResult.proposal_greeting;
+                    job.delivery_estimate = cachedResult.delivery_estimate;
+                    job.specification_questions = cachedResult.specification_questions;
+
+                    proposalCacheHitCount++;
+                    console.log(`💾 [${proposalCount + proposalCacheHitCount}/${sortedJobs.length}] ${job.original_title?.substring(0, 40)}... 提案文をキャッシュから取得`);
+
+                    return { success: true, index, fromCache: true };
+                } else {
+                    // キャッシュミス：新規でGPT処理
+                    const allDetailsData = [...ecDetailsData, ...webDetailsData, ...softwareDetailsData, ...developmentDetailsData];
+                    const originalJob = getOriginalJobData(job.jobId, allDetailsData);
+
+                    const { greeting, delivery_estimate, questions } = await proposalLimiter.execute(() =>
+                        generateProposalContent(job, originalJob)
+                    );
+
+                    job.proposal_greeting = greeting;
+                    job.delivery_estimate = delivery_estimate;
+                    job.specification_questions = questions;
+
+                    // キャッシュを更新
+                    if (processedCache.has(job.jobId)) {
+                        const existingCache = processedCache.get(job.jobId)!;
+                        existingCache.proposal_greeting = greeting;
+                        existingCache.delivery_estimate = delivery_estimate;
+                        existingCache.specification_questions = questions;
+                    } else {
+                        // スキル適性評価がキャッシュから取得された場合でも、提案文は新規作成
+                        processedCache.set(job.jobId, {
+                            jobId: job.jobId,
+                            skill_fit_score: job.skill_fit_score,
+                            skill_analysis: job.skill_analysis || '',
+                            proposal_greeting: greeting,
+                            delivery_estimate: delivery_estimate,
+                            specification_questions: questions,
+                            processed_at: new Date().toISOString()
+                        });
+                    }
+
+                    newProposalProcessingCount++;
+                    console.log(`✅ [${newProposalProcessingCount}/${sortedJobs.length - proposalCacheHitCount}] ${job.original_title?.substring(0, 40)}... 提案文生成完了（新規処理）`);
+
+                    return { success: true, index, fromCache: false };
+                }
+            } catch (error) {
+                console.error(`❌ [${index + 1}/${sortedJobs.length}] 提案文生成エラー:`, error);
+                return { success: false, index, fromCache: false };
+            }
+        });
+
+        await Promise.allSettled(proposalPromises);
+        proposalCount = proposalCacheHitCount + newProposalProcessingCount;
+        console.log(`🎯 提案文生成完了: ${proposalCount}/${sortedJobs.length}件成功（キャッシュ: ${proposalCacheHitCount}件、新規: ${newProposalProcessingCount}件）`);
+
+        // キャッシュを保存
+        saveProcessedJobsCache(processedCache);
+
+        // 結果表示（上位20件）
+        console.log(`\n🏆 Webエンジニア向けおすすめ案件ランキング TOP20:\n`);
+
+        sortedJobs.slice(0, 20).forEach((job, index) => {
+            const rank = index + 1;
+            const score = job.recommendation_score;
+            const hourlyRate = job.hourly_rate_numeric.toLocaleString() + '円';
+            const category = job.category || 'N/A';
+            const difficulty = job.難易度 || 'N/A';
+            const workload = job.工数_見積もり || 'N/A';
+            const skillFit = job.skill_fit_score?.toFixed(1) || 'N/A';
+            const summary = (job.gpt_summary || '').substring(0, 60) + '...';
+
+            console.log(`${rank}位: ${score}点 | ${hourlyRate} (${category}) | 難易度: ${difficulty} | スキル適性: ${skillFit}点`);
+            console.log(`   工数: ${workload}`);
+            console.log(`   概要: ${summary}`);
+
+            if (job.skill_analysis) {
+                console.log(`   🧠 適性: ${job.skill_analysis.substring(0, 80)}...`);
+            }
+
+            // 提案文があれば表示
+            if (job.proposal_greeting) {
+                console.log(`   💬 提案文: ${job.proposal_greeting.substring(0, 60)}...`);
+            }
+            console.log('');
+        });
+
+        // 時給3000円以上の案件のみをMarkdownに出力
+        const highValueJobs = sortedJobs.filter(job => job.hourly_rate_numeric >= PROPOSAL_GENERATION_MIN_HOURLY_RATE);
+
+        // 時給分布の詳細を表示
+        console.log(`\n📊 時給分布の詳細:`);
+        const hourlyRateDistribution = sortedJobs.reduce((acc, job) => {
+            const rate = job.hourly_rate_numeric;
+            if (rate >= 4000) acc['4000円以上']++;
+            else if (rate >= 3500) acc['3500円以上']++;
+            else if (rate >= 3000) acc['3000円以上']++;
+            else if (rate >= 2500) acc['2500円以上']++;
+            else if (rate >= 2000) acc['2000円以上']++;
+            else if (rate >= 1500) acc['1500円以上']++;
+            else if (rate >= 1000) acc['1000円以上']++;
+            else acc['1000円未満']++;
+            return acc;
+        }, {
+            '4000円以上': 0,
+            '3500円以上': 0,
+            '3000円以上': 0,
+            '2500円以上': 0,
+            '2000円以上': 0,
+            '1500円以上': 0,
+            '1000円以上': 0,
+            '1000円未満': 0
+        });
+
+        Object.entries(hourlyRateDistribution).forEach(([range, count]) => {
+            if (count > 0) {
+                console.log(`   ${range}: ${count}件`);
+            }
+        });
+
+        console.log(`\n📝 時給${PROPOSAL_GENERATION_MIN_HOURLY_RATE}円以上の案件: ${highValueJobs.length}件をMarkdownに出力`);
+
+        // 全案件データ用のMarkdownファイルを生成
+        const allJobsMarkdown = generateAllJobsMarkdown(sortedJobs);
+        writeFileSync('output/all-jobs-ranked.md', allJobsMarkdown, 'utf8');
+        console.log(`📄 全案件ランキングを保存: output/all-jobs-ranked.md (${sortedJobs.length}件)`);
+
+        // 高時給案件データ用のMarkdownファイルを生成（既存）
+        const highValueMarkdown = generateRecommendationMarkdown(highValueJobs, sortedJobs.length); // 時給3000円以上のみ表示
+        writeFileSync('output/recommended-jobs.md', highValueMarkdown, 'utf8');
+        console.log(`📄 高時給案件おすすめを保存: output/recommended-jobs.md (${highValueJobs.length}件)`);
+
+        // 一時的に生成されたJSONファイルを削除
+        try {
+            const tempFiles = [
+                'output/jobs-with-recommendation-scores.json',
+                'output/high-hourly-jobs-3000+.md'
+            ];
+            tempFiles.forEach(file => {
+                if (existsSync(file)) {
+                    unlinkSync(file);
+                    console.log(`��️ 一時ファイルを削除: ${file}`);
+                }
+            });
+        } catch (error) {
+            console.warn('⚠️ 一時ファイル削除中にエラー:', error);
+        }
+
+        const endTime = Date.now();
+        const duration = ((endTime - startTime) / 1000).toFixed(2);
+        console.log(`🎉 おすすめ案件の計算が完了しました。処理時間: ${duration}秒`);
+    } catch (error) {
+        console.error(`❌ おすすめ案件の計算中にエラーが発生しました:`, error);
+    }
+}
+
+// Markdown生成関数
+function generateRecommendationMarkdown(jobs: ScoredJob[], totalJobs?: number): string {
+    // 日本時間で秒まで含む詳細な時刻を取得
+    const now = new Date();
+    const jstOffset = 9 * 60; // JST = UTC+9
+    const jstTime = new Date(now.getTime() + jstOffset * 60 * 1000);
+    const currentDateTime = jstTime.toISOString().replace('T', ' ').replace('Z', '').substring(0, 19) + ' JST';
+
+    let markdown = `# Webエンジニア向けおすすめ案件ランキング（時給${PROPOSAL_GENERATION_MIN_HOURLY_RATE}円以上）\n\n`;
+    markdown += `> **生成日時**: ${currentDateTime}  \n`;
+    markdown += `> 評価基準: 係数システム（時給×${EVALUATION_COEFFICIENTS.HOURLY} + 工数×${EVALUATION_COEFFICIENTS.WORKLOAD} + スキル適性×${EVALUATION_COEFFICIENTS.SKILL_FIT}）  \n`;
+    markdown += `> 対象者: 高スキルWebエンジニア（デザインスキル低め）  \n`;
+    markdown += `> 最高得点: ${Math.max(...jobs.map(j => j.recommendation_score))}点  \n`;
+    markdown += `> 表示件数: ${jobs.length}件（全${totalJobs || jobs.length}件から時給${PROPOSAL_GENERATION_MIN_HOURLY_RATE}円以上を抽出）\n\n`;
+
+    markdown += `## 👨‍💻 対象スキルプロフィール\n\n`;
+    markdown += `- **高スキルWebエンジニア**（フロントエンド・バックエンド両方）\n`;
+    markdown += `- **得意分野**: プログラミング・システム開発・API連携・DB設計・パフォーマンス最適化\n`;
+    markdown += `- **苦手分野**: グラフィックデザイン・UI/UXデザイン（CSSスタイリング程度なら対応可能）\n\n`;
+
+    markdown += `## 📊 評価基準の詳細\n\n`;
+    markdown += `### 💰 時給スコア（係数：${EVALUATION_COEFFICIENTS.HOURLY}）\n`;
+    markdown += `- 4000円以上: 10点 → ${10 * EVALUATION_COEFFICIENTS.HOURLY}点\n`;
+    markdown += `- 3500円以上: 9点 → ${9 * EVALUATION_COEFFICIENTS.HOURLY}点\n`;
+    markdown += `- 3000円以上: 8点 → ${8 * EVALUATION_COEFFICIENTS.HOURLY}点\n`;
+    markdown += `- 2500円以上: 7点 → ${7 * EVALUATION_COEFFICIENTS.HOURLY}点\n`;
+    markdown += `- 2000円以上: 6点 → ${6 * EVALUATION_COEFFICIENTS.HOURLY}点\n\n`;
+
+    markdown += `### ⏰ 工数スコア（係数：${EVALUATION_COEFFICIENTS.WORKLOAD}）\n`;
+    markdown += `- 20-80時間: 10点 → ${10 * EVALUATION_COEFFICIENTS.WORKLOAD}点（最適な工数）\n`;
+    markdown += `- 10-120時間: 8点 → ${8 * EVALUATION_COEFFICIENTS.WORKLOAD}点（良い範囲）\n`;
+    markdown += `- 5-160時間: 6点 → ${6 * EVALUATION_COEFFICIENTS.WORKLOAD}点（許容範囲）\n\n`;
+
+    markdown += `### 🧠 スキル適性スコア（係数：${EVALUATION_COEFFICIENTS.SKILL_FIT}）\n`;
+    markdown += `- 10点: 技術力を最大限活かせる案件（システム開発、API連携、パフォーマンス改善等）\n`;
+    markdown += `- 8-9点: 技術スキルが重要な案件（WordPressカスタマイズ、EC機能開発等）\n`;
+    markdown += `- 6-7点: 技術とデザインが半々（既存サイト修正、簡単なスタイリング等）\n`;
+    markdown += `- 4-5点: デザイン要素が多い（レイアウト作成、ビジュアル重視等）\n`;
+    markdown += `- 1-3点: 純粋なデザイン案件（グラフィック制作、UI/UXデザイン等）\n`;
+    markdown += `- 0点: 完全にスキル外（イラスト制作、動画編集等）\n\n`;
+
+    markdown += `## 🔧 係数の意味\n\n`;
+    markdown += `- **時給係数 ${EVALUATION_COEFFICIENTS.HOURLY}**: 収益性重視\n`;
+    markdown += `- **工数係数 ${EVALUATION_COEFFICIENTS.WORKLOAD}**: 適度な作業量をバランス評価\n`;
+    markdown += `- **スキル適性係数 ${EVALUATION_COEFFICIENTS.SKILL_FIT}**: スキル適性を最重視（技術案件を優遇）\n`;
+    markdown += `- **難易度**: 参考情報として表示（点数計算には含めない）\n\n`;
+
+    const maxScore = (10 * EVALUATION_COEFFICIENTS.HOURLY) + (10 * EVALUATION_COEFFICIENTS.WORKLOAD) + (10 * EVALUATION_COEFFICIENTS.SKILL_FIT);
+    markdown += `**最高理論値**: ${10 * EVALUATION_COEFFICIENTS.HOURLY} + ${10 * EVALUATION_COEFFICIENTS.WORKLOAD} + ${10 * EVALUATION_COEFFICIENTS.SKILL_FIT} = ${maxScore}点\n\n`;
+
+    markdown += `## 🏆 ランキング\n\n`;
+
+    jobs.forEach((job, index) => {
+        const rank = index + 1;
+        markdown += `### ${rank}位: ${job.recommendation_score}点 - ${job.original_title || job.title}\n\n`;
+        markdown += `**💰 想定時給:** ${job.hourly_rate_numeric.toLocaleString()}円  \n`;
+        markdown += `**🎯 難易度:** ${job.難易度}  \n`;
+        markdown += `**⏰ 見積工数:** ${job.工数_見積もり}  \n`;
+        markdown += `**🧠 スキル適性:** ${job.skill_fit_score?.toFixed(1)}点/10点  \n`;
+        markdown += `**🏷️ カテゴリ:** ${job.category}  \n`;
+        markdown += `**🔗 案件URL:** ${job.link}\n\n`;
+
+        // 提案金額と納期を追加
+        if (job.proposal_amount && job.delivery_estimate) {
+            markdown += `**💴 提案金額:** ${job.proposal_amount.toLocaleString()}円  \n`;
+            markdown += `**📅 納期提案:** ${job.delivery_estimate}  \n\n`;
+        }
+
+        markdown += `**📝 分析概要:**  \n`;
+        markdown += `${job.gpt_summary}\n\n`;
+
+        if (job.skill_analysis) {
+            markdown += `**🧠 スキル適性分析:**  \n`;
+            markdown += `${job.skill_analysis}\n\n`;
+        }
+
+        // 提案文と質問を追加
+        if (job.proposal_greeting && job.specification_questions) {
+            markdown += `**💬 戦略的提案文:**  \n`;
+            markdown += `${job.proposal_greeting}\n\n`;
+
+            markdown += `**❓ 仕様確認質問:**  \n`;
+            markdown += `${job.specification_questions}\n\n`;
+        }
+
+        markdown += `---\n\n`;
+    });
+
+    // 案件一覧を表形式で出力
+    if (jobs.length > 0) {
+        markdown += `\n## 💴 案件一覧（時給${PROPOSAL_GENERATION_MIN_HOURLY_RATE}円以上）\n\n`;
+        markdown += `| 案件名 | 提案金額 | 納期提案 | 提案文（抜粋） |\n`;
+        markdown += `|---|---|---|---|\n`;
+        jobs.forEach(job => {
+            const title = job.original_title || job.title || '案件名不明';
+            const amount = job.proposal_amount?.toLocaleString() || '要相談';
+            const delivery = job.delivery_estimate || '要相談';
+            const greeting = (job.proposal_greeting || '').replace(/\n/g, ' ').substring(0, 80);
+            markdown += `| [${title}](${job.link}) | ${amount}円 | ${delivery} | ${greeting}... |\n`;
+        });
+        markdown += `\n`;
+    }
+
+    return markdown;
+}
+
+// 全案件用のMarkdown生成関数
+function generateAllJobsMarkdown(jobs: ScoredJob[]): string {
+    // 日本時間で秒まで含む詳細な時刻を取得
+    const now = new Date();
+    const jstOffset = 9 * 60; // JST = UTC+9
+    const jstTime = new Date(now.getTime() + jstOffset * 60 * 1000);
+    const currentDateTime = jstTime.toISOString().replace('T', ' ').replace('Z', '').substring(0, 19) + ' JST';
+
+    let markdown = `# 全案件ランキング（おすすめ度順）\n\n`;
+    markdown += `> **生成日時**: ${currentDateTime}  \n`;
+    markdown += `> 評価基準: 係数システム（時給×${EVALUATION_COEFFICIENTS.HOURLY} + 工数×${EVALUATION_COEFFICIENTS.WORKLOAD} + スキル適性×${EVALUATION_COEFFICIENTS.SKILL_FIT}）  \n`;
+    markdown += `> 対象者: 高スキルWebエンジニア（デザインスキル低め）  \n`;
+    markdown += `> 最高得点: ${Math.max(...jobs.map(j => j.recommendation_score))}点  \n`;
+    markdown += `> 総案件数: ${jobs.length}件（提案文生成対象外の案件も含む）\n\n`;
+
+    // 時給分布を表示
+    const hourlyRateDistribution = jobs.reduce((acc, job) => {
+        const rate = job.hourly_rate_numeric;
+        if (rate >= 4000) acc['4000円以上']++;
+        else if (rate >= 3500) acc['3500円以上']++;
+        else if (rate >= 3000) acc['3000円以上']++;
+        else if (rate >= 2500) acc['2500円以上']++;
+        else if (rate >= 2000) acc['2000円以上']++;
+        else if (rate >= 1500) acc['1500円以上']++;
+        else if (rate >= 1000) acc['1000円以上']++;
+        else acc['1000円未満']++;
+        return acc;
+    }, {
+        '4000円以上': 0,
+        '3500円以上': 0,
+        '3000円以上': 0,
+        '2500円以上': 0,
+        '2000円以上': 0,
+        '1500円以上': 0,
+        '1000円以上': 0,
+        '1000円未満': 0
+    });
+
+    markdown += `## 📊 時給分布\n\n`;
+    Object.entries(hourlyRateDistribution).forEach(([range, count]) => {
+        if (count > 0) {
+            markdown += `- ${range}: ${count}件\n`;
+        }
+    });
+    markdown += `\n`;
+
+    markdown += `## 🏆 全案件ランキング\n\n`;
+
+    jobs.forEach((job, index) => {
+        const rank = index + 1;
+        markdown += `### ${rank}位: ${job.recommendation_score}点 - ${job.original_title || job.title}\n\n`;
+        markdown += `**💰 想定時給:** ${job.hourly_rate_numeric.toLocaleString()}円  \n`;
+        markdown += `**🎯 難易度:** ${job.難易度}  \n`;
+        markdown += `**⏰ 見積工数:** ${job.工数_見積もり}  \n`;
+        markdown += `**🧠 スキル適性:** ${job.skill_fit_score?.toFixed(1)}点/10点  \n`;
+        markdown += `**🏷️ カテゴリ:** ${job.category}  \n`;
+        markdown += `**🔗 案件URL:** ${job.link}\n\n`;
+
+        markdown += `**📝 分析概要:**  \n`;
+        markdown += `${job.gpt_summary}\n\n`;
+
+        if (job.skill_analysis) {
+            markdown += `**🧠 スキル適性分析:**  \n`;
+            markdown += `${job.skill_analysis}\n\n`;
+        }
+
+        // 提案文がある場合のみ表示（時給3000円以上の案件）
+        if (job.proposal_greeting && job.specification_questions) {
+            markdown += `**💬 戦略的提案文:**  \n`;
+            markdown += `${job.proposal_greeting}\n\n`;
+
+            markdown += `**❓ 仕様確認質問:**  \n`;
+            markdown += `${job.specification_questions}\n\n`;
+
+            if (job.proposal_amount && job.delivery_estimate) {
+                markdown += `**💴 提案金額:** ${job.proposal_amount.toLocaleString()}円  \n`;
+                markdown += `**📅 納期提案:** ${job.delivery_estimate}  \n\n`;
+            }
+        } else {
+            markdown += `**💡 注意:** この案件は時給${PROPOSAL_GENERATION_MIN_HOURLY_RATE}円未満のため、提案文は生成されていません。\n\n`;
+        }
+
+        markdown += `---\n\n`;
+    });
+
+    // 案件一覧を表形式で出力
+    if (jobs.length > 0) {
+        markdown += `\n## 📋 案件一覧（全${jobs.length}件）\n\n`;
+        markdown += `| 順位 | 案件名 | 時給 | おすすめ度 | カテゴリ |\n`;
+        markdown += `|---|---|---|---|---|\n`;
+        jobs.forEach((job, index) => {
+            const rank = index + 1;
+            const title = job.original_title || job.title || '案件名不明';
+            const hourlyRate = job.hourly_rate_numeric.toLocaleString() + '円';
+            const score = job.recommendation_score;
+            const category = job.category || 'N/A';
+            markdown += `| ${rank} | [${title.substring(0, 40)}...](${job.link}) | ${hourlyRate} | ${score}点 | ${category} |\n`;
+        });
+        markdown += `\n`;
+    }
+
+    return markdown;
+}
+
+// GPTで提案用挨拶文と仕様質問を生成する関数
+async function generateProposalContent(job: AnalysisResult, originalJob: any): Promise<{ greeting: string; delivery_estimate: string; questions: string }> {
+    const prompt = `以下のクラウドワークス案件について、下記3点を日本語で出力してください。
+
+【案件情報】
+タイトル: ${job.title}
+詳細説明: ${originalJob?.detailedDescription || '詳細不明'}
+想定時給: ${job.想定時給}
+見積工数: ${job.工数_見積もり}
+難易度: ${job.難易度}
+
+【出力内容】
+1. 戦略的提案文（プロフェッショナルで親しみやすい、簡潔な自己紹介・案件への取り組み姿勢 2-3行）
+2. 納期見込み（何日で納品できそうか。根拠も1文で）
+3. 仕様確認質問（案件を確実に成功させるための具体的な質問を3-5個）
+
+【提案文のポイント】
+- 経験と専門性をアピール
+- 案件への真剣な取り組み姿勢を示す
+- クライアントの課題解決に焦点
+
+【出力フォーマット】
+提案文:
+<プロフェッショナルで簡潔な提案文>
+
+納期見込み:
+<例: 10日（要件定義・修正対応含む）>
+
+質問:
+1. <質問1>
+2. <質問2>
+3. <質問3>
+4. <質問4>
+5. <質問5>`;
+
+    try {
+        const res = await openai.chat.completions.create({
+            model: 'gpt-4o',
+            messages: [
+                { role: 'system', content: 'あなたは経験豊富なフリーランサーで、クラウドワークス案件への効果的な提案文作成の専門家です。クライアントの信頼を得て、案件を受注するための戦略的なコミュニケーションに長けています。' },
+                { role: 'user', content: prompt }
+            ],
+            max_tokens: 800,
+            temperature: 0.3,
+        });
+
+        const text = res.choices[0]?.message?.content || '';
+
+        // 提案文、納期見込み、質問を分離
+        const greetingMatch = text.match(/提案文[:：]\s*([\s\S]*?)(?=納期見込み[:：]|$)/);
+        const deliveryMatch = text.match(/納期見込み[:：]\s*([\s\S]*?)(?=質問[:：]|$)/);
+        const questionsMatch = text.match(/質問[:：]\s*([\s\S]*)/);
+
+        const greeting = greetingMatch?.[1]?.trim() || '';
+        const delivery_estimate = deliveryMatch?.[1]?.trim() || '';
+        const questions = questionsMatch?.[1]?.trim() || '';
+
+        return { greeting, delivery_estimate, questions };
+    } catch (e) {
+        console.error(`❌ 提案文・納期・質問生成エラー (${job.jobId}):`, e);
+        return { greeting: '', delivery_estimate: '', questions: '' };
+    }
+}
+
+// GPTでスキル適性を評価する関数
+async function analyzeSkillFit(job: AnalysisResult, originalJob: any): Promise<{ score: number; analysis: string }> {
+    const prompt = `以下のクラウドワークス案件を、高スキルWebエンジニアの視点で評価してください。
+
+【依頼者のスキルプロフィール】
+- 高スキルWebエンジニア（フロントエンド・バックエンド両方）
+- プログラミング・システム開発・API連携が得意
+- データベース設計・パフォーマンス最適化などの技術力高い
+- デザインスキルは低い（グラフィックデザイン・UI/UXデザインは苦手）
+- CSSスタイリング程度なら対応可能
+
+【案件情報】
+タイトル: ${job.title}
+詳細説明: ${originalJob?.detailedDescription || '詳細不明'}
+カテゴリ: ${job.category}
+難易度: ${job.難易度}
+
+【評価基準】
+スキル適性スコア（0-10点）:
+- 10点: 技術力を最大限活かせる案件（システム開発、API連携、パフォーマンス改善等）
+- 8-9点: 技術スキルが重要な案件（WordPressカスタマイズ、EC機能開発等）
+- 6-7点: 技術とデザインが半々（既存サイト修正、簡単なスタイリング等）
+- 4-5点: デザイン要素が多い（レイアウト作成、ビジュアル重視等）
+- 1-3点: 純粋なデザイン案件（グラフィック制作、UI/UXデザイン等）
+- 0点: 完全にスキル外（イラスト制作、動画編集等）
+
+【出力フォーマット】
+スコア: <0-10の数値>
+分析: <なぜそのスコアなのか、技術的な観点での評価理由を2-3行で>`;
+
+    try {
+        const res = await openai.chat.completions.create({
+            model: 'gpt-4o',
+            messages: [
+                { role: 'system', content: 'あなたは技術人材のスキルマッチング専門家で、Webエンジニアの技術力と案件要件を正確に評価できます。デザインスキルの有無を考慮した実用的な評価を行います。' },
+                { role: 'user', content: prompt }
+            ],
+            max_tokens: 300,
+            temperature: 0.2,
+        });
+
+        const text = res.choices[0]?.message?.content || '';
+
+        // スコアと分析を分離
+        const scoreMatch = text.match(/スコア[:：]\s*([0-9.]+)/);
+        const analysisMatch = text.match(/分析[:：]\s*([\s\S]*)/);
+
+        const score = scoreMatch?.[1] ? parseFloat(scoreMatch[1]) : 5;
+        const analysis = analysisMatch?.[1]?.trim() || '';
+
+        return { score: Math.max(0, Math.min(10, score)), analysis };
+    } catch (e) {
+        console.error(`❌ スキル適性分析エラー (${job.jobId}):`, e);
+        return { score: 5, analysis: '分析エラー' };
+    }
+}
+
+// 実行
+(async () => {
+    await main();
+})();
+</file>
+
 <file path="readme.md">
 # CrowdWorks 自動化システム
+
+## メモ
+とりあえず、指定件数データを取って、ざっくりの時給と、工数と、提案文を自動生成できるようになった
+かかった日数は一日
+とりあえず回せるようにはなったので、調整しながら進める
 
 [![CI/CD Pipeline](https://github.com/masayuki-akinari/crowdworks-search/actions/workflows/ci.yml/badge.svg)](https://github.com/masayuki-akinari/crowdworks-search/actions/workflows/ci.yml)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.6.3-blue.svg)](https://www.typescriptlang.org/)
@@ -2949,11 +4766,14 @@ jobs:
 
 ## 📋 概要
 
-CrowdWorksの案件情報を自動収集・AI評価し、高評価案件をメール通知するサーバーレスシステムです。
+CrowdWorksとUpworkの案件情報を自動収集・AI評価し、高時給案件をレポート出力するサーバーレスシステムです。
 
 ### 🚀 主要機能
+- **統合ジョブサーチ**: CrowdWorks + Upworkの統合案件検索
 - **自動スクレイピング**: Playwright + Chromiumによる15分間隔実行
 - **AI評価**: OpenAI GPT-4による案件品質評価
+- **高時給フィルタリング**: 時給一定以上の案件自動抽出
+- **詳細レポート**: Markdown/JSON形式での自動レポート生成
 - **スマート通知**: 高評価案件の即座メール送信
 - **コスト最適化**: 月額$5以下での運用
 
@@ -3019,11 +4839,30 @@ cd crowdworks-search
 # 依存関係インストール
 npm install
 
+# 環境変数設定
+cp env.example .env
+# .envファイルを編集してAPI認証情報を設定
+
 # AWS認証情報設定
 aws configure
 
 # CDK初期化（初回のみ）
 npx cdk bootstrap
+```
+
+### 3. 新機能: 統合ジョブサーチ
+```bash
+# 基本的な統合検索実行（最低時給3000円）
+npm run integrated-search
+
+# 高時給案件検索（最低時給4000円）
+npm run search:high-rate
+
+# 開発者向け案件検索（React, TypeScript等）
+npm run search:dev
+
+# カスタム検索
+npm run integrated-search -- --min-rate 5000 --max-jobs 30 --keywords "nodejs,aws"
 ```
 
 ### 3. **コンテナイメージ版デプロイ（推奨）**
@@ -3094,6 +4933,55 @@ npm run docker:run
 npx playwright install chromium
 npm run test:e2e
 ```
+
+## 📚 統合ジョブサーチの使用方法
+
+### 基本コマンド
+```bash
+# 全てのオプション表示
+npm run integrated-search -- --help
+
+# 基本検索（最低時給3000円、最大50件/サイト）
+npm run integrated-search
+
+# 条件指定検索
+npm run integrated-search -- --min-rate 4000 --max-jobs 30
+
+# カテゴリ指定検索
+npm run integrated-search -- --categories "web,mobile"
+
+# キーワード検索
+npm run integrated-search -- --keywords "react,typescript,nodejs"
+
+# 出力形式指定
+npm run integrated-search -- --format markdown
+```
+
+### 環境変数設定
+```bash
+# Upwork API認証（必須）
+UPWORK_CONSUMER_KEY=your_consumer_key
+UPWORK_CONSUMER_SECRET=your_consumer_secret
+UPWORK_ACCESS_TOKEN=your_access_token    # オプション
+UPWORK_ACCESS_TOKEN_SECRET=your_secret   # オプション
+
+# OpenAI API（AI分析用）
+OPENAI_API_KEY=your_openai_api_key
+```
+
+### 出力ファイル
+実行後、`output/`ディレクトリに以下のファイルが生成されます：
+
+- `integrated-job-report-YYYY-MM-DD.json` - JSON形式の詳細レポート
+- `integrated-job-report-YYYY-MM-DD.md` - Markdown形式のサマリーレポート  
+- `high-value-jobs-YYYY-MM-DD.md` - 高時給案件の詳細レポート
+
+### レポート内容
+- **CrowdWorks**: 既存スクレイピング機能による案件取得
+- **Upwork**: API経由での案件取得（モック実装）
+- **通貨変換**: USD→JPY自動変換（現在レート: 1USD = 150JPY）
+- **フィルタリング**: 時給一定以上の案件自動抽出
+- **AI分析**: 市場動向とおすすめ案件の分析
 
 ### ログ確認
 ```bash
@@ -3227,7 +5115,11 @@ npm run full-analysis:quick
         "h": "npm run handler",
         "full-analysis": "npm run handler full-analysis",
         "full-analysis:quick": "npm run handler full-analysis 20",
-        "full-analysis:detailed": "npm run handler full-analysis 100"
+        "full-analysis:detailed": "npm run handler full-analysis 100",
+        "integrated-search": "npx ts-node -r dotenv/config scripts/integrated-job-search.ts",
+        "search:basic": "npm run integrated-search",
+        "search:high-rate": "npm run integrated-search -- --min-rate 4000",
+        "search:dev": "npm run integrated-search -- --categories web,mobile --keywords react,typescript,nodejs"
     },
     "keywords": [
         "crowdworks",
@@ -3424,15 +5316,15 @@ async function scrapeCrowdWorksJobsByCategory(
 
   try {
     const categoryUrls: { [key: string]: string } = {
-      'ec': 'https://crowdworks.jp/public/jobs/category/34',
-      'web_products': 'https://crowdworks.jp/public/jobs/category/73',
-      'software_development': 'https://crowdworks.jp/public/jobs/category/227',
-      'development': 'https://crowdworks.jp/public/jobs/category/23',
+      'ec': 'https://crowdworks.jp/public/jobs/group/ec',
+      'web_products': 'https://crowdworks.jp/public/jobs/group/web_products',
+      'software_development': 'https://crowdworks.jp/public/jobs/group/software_development',
+      'development': 'https://crowdworks.jp/public/jobs/group/development',
       'writing': 'https://crowdworks.jp/public/jobs/category/141',
       'translation': 'https://crowdworks.jp/public/jobs/category/406',
       'marketing': 'https://crowdworks.jp/public/jobs/category/539',
-      'system_development': 'https://crowdworks.jp/public/jobs/category/23',
-      'app_development': 'https://crowdworks.jp/public/jobs/category/227'
+      'system_development': 'https://crowdworks.jp/public/jobs/group/development',
+      'app_development': 'https://crowdworks.jp/public/jobs/group/software_development'
     };
 
     const baseUrl = categoryUrls[category];

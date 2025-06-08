@@ -14,7 +14,7 @@ export interface JobData {
   skills: string[]; // 必要スキル（最大5個）
   experience: 'beginner' | 'intermediate' | 'expert'; // 経験レベル
   scrapedAt: Date; // 取得日時
-  source: 'crowdworks'; // 取得元（将来拡張用）
+  source: 'crowdworks' | 'upwork'; // 取得元（拡張済み）
 }
 
 // 評価結果型（軽量版）
@@ -251,3 +251,126 @@ export const DEFAULT_CONFIG = {
     'app_development'
   ] as const satisfies readonly CrowdWorksCategory[]
 } as const;
+
+// Upwork専用案件データ型
+export interface UpworkJobData {
+  id: string; // Upwork案件ID
+  title: string; // 案件タイトル
+  description: string; // 案件詳細
+  url: string; // Upwork案件URL
+  budget: {
+    type: 'fixed' | 'hourly'; // 固定価格 or 時間単価
+    amount?: number; // 固定価格の場合の金額（USD）
+    min?: number; // 時間単価の場合の最小金額（USD）
+    max?: number; // 時間単価の場合の最大金額（USD）
+  };
+  duration: string; // プロジェクト期間（"Less than 1 month"等）
+  experienceLevel: 'entry' | 'intermediate' | 'expert'; // 経験レベル
+  jobType: 'fixed-price' | 'hourly'; // 案件タイプ
+  category: {
+    name: string; // カテゴリ名
+    subcategory?: string; // サブカテゴリ
+  };
+  client: {
+    country?: string; // クライアントの国
+    memberSince?: string; // 登録日
+    totalSpent?: number; // 総支払額（USD）
+    hireRate?: number; // 採用率（%）
+    totalJobs?: number; // 総案件投稿数
+    avgHourlyPaid?: number; // 平均時給支払額（USD）
+    paymentVerified: boolean; // 支払い認証済み
+  };
+  skills: string[]; // 必要スキル
+  proposals: number; // 提案数
+  postedTime: string; // 投稿時間
+  scrapedAt: Date; // 取得日時
+}
+
+// Upwork API認証情報型
+export interface UpworkCredentials {
+  consumerKey: string;
+  consumerSecret: string;
+  accessToken?: string;
+  accessTokenSecret?: string;
+  // OAuth2用（将来対応）
+  clientId?: string;
+  clientSecret?: string;
+  refreshToken?: string;
+}
+
+// Upworkログイン結果型
+export interface UpworkLoginResult {
+  success: boolean;
+  isAuthenticated: boolean;
+  accessToken?: string;
+  error?: string;
+  executionTime: number;
+}
+
+// 統合案件検索結果型
+export interface IntegratedJobSearchResult {
+  crowdworks: {
+    jobs: JobData[];
+    total: number;
+    success: boolean;
+    error?: string;
+    executionTime: number;
+  };
+  upwork: {
+    jobs: UpworkJobData[];
+    total: number;
+    success: boolean;
+    error?: string;
+    executionTime: number;
+  };
+  summary: {
+    totalJobs: number;
+    highHourlyJobs: number; // 時給一定以上の案件数
+    averageHourlyRate: number; // 平均時給（円換算）
+    executionTime: number;
+    timestamp: Date;
+  };
+}
+
+// 統合案件レポート型
+export interface IntegratedJobReport {
+  id: string; // レポートID
+  generatedAt: Date; // 生成日時
+  criteria: {
+    minHourlyRate: number; // 最低時給条件（円）
+    categories: string[]; // 対象カテゴリ
+    maxJobsPerSource: number; // ソース毎の最大取得件数
+  };
+  results: IntegratedJobSearchResult;
+  highValueJobs: {
+    crowdworks: JobData[];
+    upwork: UpworkJobData[];
+  };
+  analysis: {
+    marketTrends: string; // 市場動向分析
+    recommendations: string[]; // おすすめ案件の理由
+    alerts: string[]; // 注意事項
+  };
+}
+
+// 統合検索設定型
+export interface IntegratedSearchConfig {
+  enabled: {
+    crowdworks: boolean;
+    upwork: boolean;
+  };
+  limits: {
+    maxJobsPerSource: number;
+    maxExecutionTime: number; // 秒
+  };
+  filtering: {
+    minHourlyRateJPY: number; // 最低時給（円）
+    minBudgetJPY: number; // 最低予算（円）
+    excludeKeywords: string[]; // 除外キーワード
+    requiredSkills: string[]; // 必須スキル
+  };
+  currency: {
+    exchangeRateUSDToJPY: number; // USD→JPY換算レート
+    lastUpdated: Date; // レート更新日
+  };
+}

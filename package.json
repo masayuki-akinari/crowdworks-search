@@ -14,11 +14,17 @@
         "analyze": "npx ts-node scripts/analyze-details.ts",
         "recommend": "npx ts-node scripts/calculate-recommendation-score.ts",
         "extract": "npx ts-node scripts/extract-high-hourly-jobs.ts",
+        "scrape-lancers": "npx ts-node scripts/scrape-lancers.ts",
+        "analyze-lancers": "npx ts-node scripts/analyze-lancers-jobs.ts",
         "handler": "npx ts-node -r dotenv/config src/lambda/handler.ts",
         "h": "npm run handler",
         "full-analysis": "npm run handler full-analysis",
         "full-analysis:quick": "npm run handler full-analysis 20",
-        "full-analysis:detailed": "npm run handler full-analysis 100"
+        "full-analysis:detailed": "npm run handler full-analysis 100",
+        "integrated-search": "npx ts-node -r dotenv/config scripts/integrated-job-search.ts",
+        "search:basic": "npm run integrated-search",
+        "search:high-rate": "npm run integrated-search -- --min-rate 4000",
+        "search:dev": "npm run integrated-search -- --categories web,mobile --keywords react,typescript,nodejs"
     },
     "keywords": [
         "crowdworks",
