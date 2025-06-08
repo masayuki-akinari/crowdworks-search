@@ -1,6 +1,6 @@
 import { chromium } from 'playwright';
 import { writeFileSync } from 'fs';
-import { LancersService, LancersJob, LancersJobDetail } from '../src/services/LancersService';
+import { LancersJob, LancersJobDetail } from '../src/services/LancersService';
 import * as dotenv from 'dotenv';
 
 // 環境変数を読み込み
@@ -27,389 +27,312 @@ async function main(): Promise<void> {
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
         });
 
-        const lancersService = new LancersService(page);
+        // const lancersService = new LancersService(page);
 
-        // 取得するカテゴリとそれぞれの最大件数（実際のスクレイピングでは控えめに設定）
+        // 取得するカテゴリとそれぞれの最大件数
         const categories = [
-            { name: 'system', maxJobs: 20 },      // システム開発・運用
-            { name: 'web', maxJobs: 15 },         // Web制作・Webデザイン
-            { name: 'app', maxJobs: 10 },         // スマホアプリ・モバイル開発
+            { name: 'system', maxJobs: 100 },      // システム開発・運用
+            { name: 'web', maxJobs: 100 },         // Web制作・Webデザイン
+            { name: 'app', maxJobs: 100 },         // スマホアプリ・モバイル開発
+            { name: 'design', maxJobs: 100 },      // デザイン
+            { name: 'writing', maxJobs: 50 },      // ライティング
+            { name: 'translation', maxJobs: 50 },  // 翻訳
         ];
 
         const allJobs: LancersJob[] = [];
         const allDetails: LancersJobDetail[] = [];
         const startTime = Date.now();
 
-        console.log('🔍 Lancersサイトの状態を確認しています...');
+        console.log('🔍 各カテゴリから案件を取得します...');
 
-        // Lancersログインページから開始
-        try {
-            const loginUrl = 'https://www.lancers.jp/user/login?ref=header_menu';
-            console.log(`🌐 Lancersログインページにアクセス: ${loginUrl}`);
-
-            await page.goto(loginUrl, { waitUntil: 'networkidle', timeout: 30000 });
-            await page.waitForTimeout(3000);
-
-            // ページタイトルを確認
-            const pageTitle = await page.title();
-            console.log(`📄 ページタイトル: ${pageTitle}`);
-
-            // ログインページの要素を確認
-            const isLoginPage = await page.$('input[name="email"], input[type="email"]');
-            if (isLoginPage) {
-                console.log('✅ ランサーズログインページを確認しました');
-
-                // 環境変数からログイン情報を取得
-                const lancersEmail = process.env['LANCERS_EMAIL'];
-                const lancersPassword = process.env['LANCERS_PASSWORD'];
-
-                if (lancersEmail && lancersPassword) {
-                    console.log('🔐 環境変数からログイン情報を取得しました');
-                    console.log('🚀 自動ログインを開始します...');
-
-                    try {
-                        // メールアドレス入力フィールドを特定して入力
-                        // MCPで確認した正確なPlaywrightセレクター
-                        try {
-                            await page.getByRole('textbox', { name: 'メールアドレス' }).fill(lancersEmail);
-                            console.log('✅ メールアドレスを入力しました');
-                            await page.waitForTimeout(1000);
-                        } catch (emailError) {
-                            console.log('⚠️ 主要メールセレクターが失敗、フォールバック試行中...');
-                            // フォールバック: より汎用的なセレクター
-                            const fallbackEmailInput = await page.$('input[type="email"], input[type="text"]:first-of-type');
-                            if (fallbackEmailInput) {
-                                await fallbackEmailInput.fill(lancersEmail);
-                                console.log('✅ メールアドレスを入力しました（フォールバック）');
-                                await page.waitForTimeout(1000);
-                            } else {
-                                console.log('❌ メールアドレス入力フィールドが見つかりません');
-                            }
-                        }
-
-                        // パスワード入力フィールドを特定して入力
-                        // MCPで確認した正確なPlaywrightセレクター
-                        try {
-                            await page.getByRole('textbox', { name: 'パスワード' }).fill(lancersPassword);
-                            console.log('✅ パスワードを入力しました');
-                            await page.waitForTimeout(1000);
-                        } catch (passwordError) {
-                            console.log('⚠️ 主要パスワードセレクターが失敗、フォールバック試行中...');
-                            // フォールバック: パスワードタイプのinput
-                            const fallbackPasswordInput = await page.$('input[type="password"]');
-                            if (fallbackPasswordInput) {
-                                await fallbackPasswordInput.fill(lancersPassword);
-                                console.log('✅ パスワードを入力しました（フォールバック）');
-                                await page.waitForTimeout(1000);
-                            } else {
-                                console.log('❌ パスワード入力フィールドが見つかりません');
-                            }
-                        }
-
-                        // ログインボタンをクリック
-                        // より具体的なセレクターを使用（複数ボタン問題の解決）
-                        try {
-                            // 通常のログインボタンを特定（Appleのログインボタンではなく）
-                            await page.click('button[type="submit"]#form_submit, button.c-button--blue:has-text("ログイン")');
-                            console.log('🔑 ログインボタンをクリックしました');
-
-                            // ログイン処理の完了を待機（より長く）
-                            console.log('⏳ ログイン処理を待機中...');
-                            await page.waitForTimeout(8000);
-
-                            // ログイン成功の確認を複数の方法で試行
-                            const currentUrl = page.url();
-                            console.log(`🌐 現在のURL: ${currentUrl}`);
-
-                            // 方法1: URLによる判定
-                            const isLoggedInByUrl = !currentUrl.includes('/user/login');
-                            console.log(`📍 URL判定: ${isLoggedInByUrl ? 'ログイン状態' : '未ログイン状態'}`);
-
-                            // 方法2: ユーザーメニューの存在による判定
-                            const userMenu = await page.$('.c-header__user-menu, .user-menu, [data-testid="user-menu"]');
-                            const isLoggedInByMenu = !!userMenu;
-                            console.log(`👤 ユーザーメニュー判定: ${isLoggedInByMenu ? 'ログイン状態' : '未ログイン状態'}`);
-
-                            // 方法3: ログインフォームが残っているかの判定
-                            const loginForm = await page.$('textbox[name="メールアドレス"], input[type="email"]');
-                            const isLoggedInByForm = !loginForm;
-                            console.log(`📝 フォーム判定: ${isLoggedInByForm ? 'ログイン状態' : '未ログイン状態'}`);
-
-                            // 総合判定
-                            const isLoggedIn = isLoggedInByUrl || isLoggedInByMenu || isLoggedInByForm;
-
-                            if (isLoggedIn) {
-                                console.log('🎉 ログインに成功しました！全ての案件を取得できます');
-                            } else {
-                                console.log('❌ ログインに失敗しました。手動でのログインが必要です');
-
-                                // エラーメッセージの詳細確認
-                                const errorElements = await page.$$('.error-message, .alert, .warning, .c-validation-error, .form-error');
-                                if (errorElements.length > 0) {
-                                    console.log('🔍 エラーメッセージを確認中...');
-                                    for (const element of errorElements) {
-                                        const errorText = await element.textContent();
-                                        if (errorText && errorText.trim()) {
-                                            console.log(`❌ エラー: ${errorText.trim()}`);
-                                        }
-                                    }
-                                }
-
-                                // ページタイトルでも判定
-                                const pageTitle = await page.title();
-                                console.log(`📄 ページタイトル: ${pageTitle}`);
-
-                                // 30秒待機して手動ログインの機会を提供
-                                console.log('⏱️ 手動ログイン用に30秒待機します...');
-                                await page.waitForTimeout(30000);
-
-                                // 再度ログイン状態を確認
-                                const finalUrl = page.url();
-                                const finalLoggedIn = !finalUrl.includes('/user/login');
-                                if (finalLoggedIn) {
-                                    console.log('🎉 手動ログインが確認されました！');
-                                } else {
-                                    console.log('ℹ️ 公開案件のみでスクレイピングを続行します');
-                                }
-                            }
-                        } catch (buttonError) {
-                            console.log('⚠️ 主要ログインボタンセレクターが失敗、フォールバック試行中...');
-                            console.error('ボタンエラー詳細:', buttonError);
-                            // フォールバック: submitボタン
-                            const fallbackSubmitButton = await page.$('button:has-text("ログイン"), input[type="submit"]');
-                            if (fallbackSubmitButton) {
-                                await fallbackSubmitButton.click();
-                                console.log('🔑 ログインボタンをクリックしました（フォールバック）');
-                                await page.waitForTimeout(8000);
-
-                                // フォールバック処理後も成功判定
-                                const currentUrl = page.url();
-                                const isLoggedIn = !currentUrl.includes('/user/login');
-                                if (isLoggedIn) {
-                                    console.log('🎉 フォールバックログインに成功しました！');
-                                } else {
-                                    console.log('❌ フォールバックログインも失敗しました');
-                                }
-                            } else {
-                                console.log('❌ ログインボタンが見つかりません');
-                            }
-                        }
-
-                    } catch (loginError) {
-                        console.error('❌ 自動ログイン中にエラーが発生:', loginError);
-                        console.log('🔄 手動ログインまたは公開案件のみでスクレイピングを続行します');
-                    }
-
-                } else {
-                    console.log('ℹ️ 環境変数にログイン情報が設定されていません');
-                    console.log('💡 .envファイルにLANCERS_EMAILとLANCERS_PASSWORDを設定すると自動ログインできます');
-                    console.log('⏱️ 手動ログイン用に30秒待機します...');
-
-                    // ユーザーが手動でログインできるよう30秒待機
-                    await page.waitForTimeout(30000);
-
-                    // ログイン状態を再確認
-                    const currentUrl = page.url();
-                    const isLoggedIn = !currentUrl.includes('/user/login') && await page.$('.c-header__user-menu, [data-testid="user-menu"]');
-
-                    if (isLoggedIn) {
-                        console.log('🎉 ログイン状態を検出しました！全ての案件を取得できます');
-                    } else {
-                        console.log('ℹ️ 未ログイン状態のため、公開案件のみを取得します');
-                    }
-                }
-            } else {
-                console.log('⚠️ ログインページの表示に問題がある可能性があります');
-            }
-
-        } catch (error) {
-            console.error('⚠️ ログインページのアクセスでエラー:', error);
-            console.log('🔄 通常のトップページからスクレイピングを続行します');
-
-            // フォールバック: 通常のトップページにアクセス
-            await page.goto('https://www.lancers.jp', { waitUntil: 'networkidle', timeout: 30000 });
-            await page.waitForTimeout(2000);
-        }
-
-        // 各カテゴリから案件を取得
         for (const category of categories) {
-            console.log(`\n🔍 カテゴリ「${category.name}」の処理開始 (最大${category.maxJobs}件)`);
+            console.log(`\n📁 カテゴリ「${category.name}」の処理を開始（最大${category.maxJobs}件）`);
 
             try {
-                const result = await lancersService.scrapeJobsByCategory(category.name, category.maxJobs);
+                // カテゴリURLマッピング（新着順パラメータ付き）
+                const categoryUrls: { [key: string]: string } = {
+                    'system': 'https://www.lancers.jp/work/search/system?open=1&show_description=1&sort=started&work_rank%5B%5D=0&work_rank%5B%5D=2&work_rank%5B%5D=3',
+                    'web': 'https://www.lancers.jp/work/search/web?open=1&show_description=1&sort=started&work_rank%5B%5D=0&work_rank%5B%5D=2&work_rank%5B%5D=3',
+                    'app': 'https://www.lancers.jp/work/search/system/smartphoneapp?open=1&show_description=1&sort=started&work_rank%5B%5D=0&work_rank%5B%5D=2&work_rank%5B%5D=3',
+                    'design': 'https://www.lancers.jp/work/search/design?open=1&show_description=1&sort=started&work_rank%5B%5D=0&work_rank%5B%5D=2&work_rank%5B%5D=3',
+                    'writing': 'https://www.lancers.jp/work/search/writing?open=1&show_description=1&sort=started&work_rank%5B%5D=0&work_rank%5B%5D=2&work_rank%5B%5D=3',
+                    'translation': 'https://www.lancers.jp/work/search/writing/translation?open=1&show_description=1&sort=started&work_rank%5B%5D=0&work_rank%5B%5D=2&work_rank%5B%5D=3'
+                };
 
-                if (result.jobs.length > 0) {
-                    allJobs.push(...result.jobs);
-                    console.log(`✅ カテゴリ「${category.name}」: ${result.jobs.length}件取得`);
+                const categoryUrl = categoryUrls[category.name];
+                if (!categoryUrl) {
+                    console.log(`❌ カテゴリ「${category.name}」のURLが見つかりません`);
+                    continue;
+                }
 
-                    // カテゴリ別にファイル保存
-                    const categoryData = {
-                        category: category.name,
-                        totalCount: result.totalCount,
-                        jobs: result.jobs,
-                        scrapedAt: new Date().toISOString()
-                    };
+                console.log(`🌐 アクセス: ${categoryUrl}`);
+                await page.goto(categoryUrl, { waitUntil: 'networkidle', timeout: 30000 });
+                await page.waitForTimeout(3000);
 
-                    const categoryFilename = `output/lancers-${category.name}.json`;
-                    writeFileSync(categoryFilename, JSON.stringify(categoryData, null, 2), 'utf8');
-                    console.log(`💾 カテゴリファイル保存: ${categoryFilename}`);
+                // 新着順が既に選択されているか確認
+                const sortSelect = await page.$('select[name="sort"], combobox[aria-label="並び順"]');
+                if (sortSelect) {
+                    const selectedValue = await sortSelect.evaluate(el => (el as HTMLSelectElement).value);
+                    console.log(`📊 現在のソート: ${selectedValue}`);
 
-                    // 詳細情報を取得（最初の5件のみ - 負荷軽減）
-                    const detailJobs = result.jobs.slice(0, 5);
-                    console.log(`📋 詳細情報取得開始: ${detailJobs.length}件`);
-
-                    for (let i = 0; i < detailJobs.length; i++) {
-                        const job = detailJobs[i];
-                        if (job) {
-                            try {
-                                console.log(`📝 [${i + 1}/${detailJobs.length}] 詳細取得: ${job.title.substring(0, 30)}...`);
-                                const detail = await lancersService.scrapeJobDetail(job.url);
-                                allDetails.push(detail);
-
-                                // 詳細取得間の待機時間（長めに設定）
-                                if (i < detailJobs.length - 1) {
-                                    await page.waitForTimeout(5000);
-                                }
-                            } catch (error) {
-                                console.error(`❌ 詳細取得エラー: ${job.url}`, error);
-                                // 詳細取得エラーは続行
-                                continue;
-                            }
-                        }
+                    if (selectedValue !== 'started') {
+                        await page.selectOption('select[name="sort"]', 'started');
+                        console.log('✅ 新着順に変更しました');
+                        await page.waitForTimeout(2000);
+                    } else {
+                        console.log('✅ 既に新着順でソートされています');
                     }
-
-                } else {
-                    console.log(`⚠️ カテゴリ「${category.name}」: 案件が見つかりませんでした`);
                 }
 
-                if (result.errors.length > 0) {
-                    console.log(`⚠️ カテゴリ「${category.name}」でエラーが発生:`, result.errors);
+                // 案件一覧を取得
+                const jobs = await getJobsFromPage(page, category.maxJobs, category.name);
+                console.log(`📊 ${category.name}カテゴリ: ${jobs.length}件の案件を取得`);
+
+                allJobs.push(...jobs);
+
+                // 詳細情報を取得（最大20件まで）
+                const detailsToFetch = jobs.slice(0, 20);
+                for (const job of detailsToFetch) {
+                    try {
+                        console.log(`🔍 詳細取得: ${job.title}`);
+                        const detail = await getJobDetail(page, job.url);
+                        if (detail) {
+                            allDetails.push(detail);
+                        }
+                        await page.waitForTimeout(1000); // レート制限
+                    } catch (detailError) {
+                        console.log(`⚠️ 詳細取得エラー: ${job.title}`);
+                    }
                 }
 
-                // カテゴリ間の待機時間（長めに設定）
-                if (categories.indexOf(category) < categories.length - 1) {
-                    console.log('⏱️ 次のカテゴリまで15秒待機...');
-                    await page.waitForTimeout(15000);
-                }
-
-            } catch (error) {
-                console.error(`❌ カテゴリ「${category.name}」処理エラー:`, error);
-                // カテゴリエラーは続行
-                continue;
+            } catch (categoryError) {
+                console.error(`❌ カテゴリ「${category.name}」でエラー:`, categoryError);
             }
-
         }
 
-        // 全案件をマージして保存
-        if (allJobs.length > 0) {
-            const allJobsData = {
-                totalCount: allJobs.length,
-                jobs: allJobs,
-                scrapedAt: new Date().toISOString(),
-                categories: categories.map(c => c.name),
-                source: 'real_scraping'
-            };
+        // ファイル出力
+        const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+        const jobsFilename = `output/lancers-jobs-${timestamp}.json`;
+        const detailsFilename = `output/lancers-details-${timestamp}.json`;
 
-            const allJobsFilename = 'output/lancers-all-jobs.json';
-            writeFileSync(allJobsFilename, JSON.stringify(allJobsData, null, 2), 'utf8');
-            console.log(`💾 全案件ファイル保存: ${allJobsFilename}`);
-        }
+        writeFileSync(jobsFilename, JSON.stringify(allJobs, null, 2), 'utf8');
+        writeFileSync(detailsFilename, JSON.stringify(allDetails, null, 2), 'utf8');
 
-        // 全詳細をマージして保存
-        if (allDetails.length > 0) {
-            const allDetailsData = {
-                totalCount: allDetails.length,
-                details: allDetails,
-                scrapedAt: new Date().toISOString(),
-                categories: categories.map(c => c.name),
-                source: 'real_scraping'
-            };
+        const elapsedTime = ((Date.now() - startTime) / 1000).toFixed(1);
 
-            const allDetailsFilename = 'output/lancers-all-details.json';
-            writeFileSync(allDetailsFilename, JSON.stringify(allDetailsData, null, 2), 'utf8');
-            console.log(`💾 全詳細ファイル保存: ${allDetailsFilename}`);
-        }
-
-        const executionTime = Date.now() - startTime;
-        console.log(`\n🎉 ランサーズスクレイピング完了!`);
-        console.log(`📊 結果統計:`);
-        console.log(`  - 総案件数: ${allJobs.length}件`);
-        console.log(`  - 詳細取得数: ${allDetails.length}件`);
-        console.log(`  - 実行時間: ${Math.round(executionTime / 1000)}秒`);
-        console.log(`  - 処理カテゴリ: ${categories.map(c => c.name).join(', ')}`);
-
-        if (allJobs.length === 0) {
-            console.log('⚠️ 案件が取得できませんでした。テストデータを生成します...');
-            await generateTestData();
-        }
+        console.log('\n🎉 スクレイピング完了！');
+        console.log(`📊 合計取得件数: ${allJobs.length}件`);
+        console.log(`📝 詳細取得件数: ${allDetails.length}件`);
+        console.log(`⏱️ 実行時間: ${elapsedTime}秒`);
+        console.log(`💾 保存先: ${jobsFilename}`);
+        console.log(`💾 詳細保存先: ${detailsFilename}`);
 
     } catch (error) {
-        console.error('❌ スクレイピング中にエラーが発生しました:', error);
-        console.log('⚠️ テストデータを生成します...');
-        await generateTestData();
+        console.error('❌ スクレイピング中にエラーが発生:', error);
     } finally {
         await browser.close();
     }
 }
 
 /**
- * テストデータを生成（実際のスクレイピングが失敗した場合のフォールバック）
+ * ページから案件一覧を取得
  */
-async function generateTestData(): Promise<void> {
-    console.log('🔧 テストデータを生成中...');
+async function getJobsFromPage(page: any, maxJobs: number, category: string): Promise<LancersJob[]> {
+    const jobs: LancersJob[] = [];
+    let pageNum = 1;
 
-    const testJobs = [
-        {
-            id: "lancers_test_001",
-            title: "【ランサーズ】Webアプリケーション開発案件",
-            description: "ECサイトのリニューアルプロジェクトです。React/Node.jsでの開発経験者を募集します。",
-            url: "https://www.lancers.jp/work/detail/4507321",
-            budget: { type: "fixed" as const, amount: 500000, currency: "JPY" },
-            category: "system",
-            tags: ["React", "Node.js", "JavaScript"],
-            client: { name: "テストクライアントA", rating: 4.5, reviewCount: 15 },
-            postedAt: "2025-01-07",
-            applicants: 8,
-            scrapedAt: new Date().toISOString()
-        },
-        {
-            id: "lancers_test_002",
-            title: "【ランサーズ】モバイルアプリUI/UX改善",
-            description: "既存のiOSアプリのUI/UX改善をお願いします。Figmaでのデザイン経験必須。",
-            url: "https://www.lancers.jp/work/detail/4507322",
-            budget: { type: "fixed" as const, amount: 300000, currency: "JPY" },
-            category: "design",
-            tags: ["UI/UX", "Figma", "iOS"],
-            client: { name: "テストクライアントB", rating: 4.2, reviewCount: 8 },
-            postedAt: "2025-01-06",
-            applicants: 12,
-            scrapedAt: new Date().toISOString()
-        },
-        {
-            id: "lancers_test_003",
-            title: "【ランサーズ】WordPress カスタマイズ開発",
-            description: "WordPressサイトの機能追加とカスタマイズを行います。PHP、MySQLの知識が必要です。",
-            url: "https://www.lancers.jp/work/detail/4507323",
-            budget: { type: "hourly" as const, amount: 4000, currency: "JPY" },
-            category: "web",
-            tags: ["WordPress", "PHP", "MySQL"],
-            client: { name: "テストクライアントC", rating: 4.8, reviewCount: 25 },
-            postedAt: "2025-01-05",
-            applicants: 5,
-            scrapedAt: new Date().toISOString()
+    while (jobs.length < maxJobs) {
+        console.log(`📄 ページ ${pageNum} を処理中...`);
+
+        // 案件一覧要素を取得（更新されたセレクター）
+        const jobElements = await page.$$('article[data-testid="job-card"], .job-item, div[data-job-id]');
+
+        if (jobElements.length === 0) {
+            // フォールバックセレクター
+            const fallbackElements = await page.$$('div:has(> a[href*="/work/detail/"])');
+            console.log(`🔍 フォールバック: ${fallbackElements.length}件の要素を発見`);
+
+            if (fallbackElements.length === 0) {
+                console.log('❌ 案件要素が見つかりません');
+                break;
+            }
         }
-    ];
 
-    const testJobsData = {
-        totalCount: testJobs.length,
-        jobs: testJobs,
-        scrapedAt: new Date().toISOString(),
-        categories: ["system", "web", "app", "design", "writing"],
-        source: 'test_data'
-    };
+        const currentPageJobs = jobElements.length > 0 ? jobElements : await page.$$('div:has(> a[href*="/work/detail/"])');
 
-    writeFileSync('output/lancers-all-jobs.json', JSON.stringify(testJobsData, null, 2), 'utf8');
-    console.log('💾 テスト用案件データを保存しました');
+        for (let i = 0; i < currentPageJobs.length && jobs.length < maxJobs; i++) {
+            try {
+                const job = await extractJobFromElement(currentPageJobs[i], category);
+                if (job) {
+                    jobs.push(job);
+                }
+            } catch (jobError) {
+                console.log(`⚠️ 案件抽出エラー: ${jobError}`);
+            }
+        }
+
+        // 次ページがあるかチェック
+        const nextButton = await page.$('a:has-text("次へ"), a[aria-label="次のページ"]');
+        if (!nextButton || jobs.length >= maxJobs) {
+            break;
+        }
+
+        await nextButton.click();
+        await page.waitForTimeout(3000);
+        pageNum++;
+    }
+
+    return jobs;
+}
+
+/**
+ * 案件要素から情報を抽出
+ */
+async function extractJobFromElement(element: any, category: string): Promise<LancersJob | null> {
+    try {
+        // タイトルとURL（更新されたセレクター）
+        const titleLink = await element.$('a[href*="/work/detail/"]');
+        if (!titleLink) return null;
+
+        const title = await titleLink.textContent();
+        const url = await titleLink.getAttribute('href');
+
+        if (!title || !url) return null;
+
+        const fullUrl = url.startsWith('http') ? url : `https://www.lancers.jp${url}`;
+        const jobId = url.match(/\/work\/detail\/(\d+)/)?.[1] || '';
+
+        // 価格情報
+        // const priceElement = await element.$('span:has-text("円"), .price, .budget');
+        // const budgetText = priceElement ? await priceElement.textContent() : '';
+
+        // カテゴリ情報
+        // const categoryElement = await element.$('a[href*="/work/search/"], .category');
+        // const subcategory = categoryElement ? await categoryElement.textContent() : '';
+
+        // 説明文
+        const descriptionElement = await element.$('.description, .job-summary, p');
+        const description = descriptionElement ? await descriptionElement.textContent() : '';
+
+        // 投稿日
+        const dateElement = await element.$('.date, .posted-date, time');
+        const postedDate = dateElement ? await dateElement.textContent() : '';
+
+        // NEW フラグ
+        // const newElement = await element.$(':has-text("NEW"), .new-badge');
+        // const isNew = !!newElement;
+
+        // クライアント情報
+        const clientElement = await element.$('a[href*="/client/"], .client-name');
+        const client = clientElement ? await clientElement.textContent() : '';
+
+        const job: LancersJob = {
+            id: jobId,
+            title: title.trim(),
+            description: description?.trim() || '',
+            url: fullUrl,
+            budget: {
+                type: 'unknown' as const,
+                amount: 0,
+                currency: 'JPY'
+            },
+            category: category,
+            tags: [],
+            client: {
+                name: client?.trim() || '',
+                rating: 0,
+                reviewCount: 0
+            },
+            postedAt: postedDate?.trim() || '',
+            applicants: 0,
+            scrapedAt: new Date().toISOString()
+        };
+
+        return job;
+
+    } catch (error) {
+        console.log(`⚠️ 案件抽出エラー:`, error);
+        return null;
+    }
+}
+
+/**
+ * 案件詳細情報を取得
+ */
+async function getJobDetail(page: any, jobUrl: string): Promise<LancersJobDetail | null> {
+    try {
+        await page.goto(jobUrl, { waitUntil: 'networkidle', timeout: 30000 });
+        await page.waitForTimeout(2000);
+
+        const jobId = jobUrl.match(/\/work\/detail\/(\d+)/)?.[1] || '';
+
+        // 詳細情報を抽出
+        const detail: LancersJobDetail = {
+            jobId: jobId,
+            title: '',
+            category: '',
+            url: jobUrl,
+            paymentType: '',
+            budget: '',
+            deliveryDate: '',
+            postDate: '',
+            applicationDeadline: '',
+            applicantCount: 0,
+            contractCount: 0,
+            recruitmentCount: 0,
+            favoriteCount: 0,
+            detailedDescription: '',
+            client: {
+                name: '',
+                url: '',
+                overallRating: '',
+                orderHistory: '',
+                completionRate: '',
+                identityVerified: false,
+                description: ''
+            },
+            recentApplicants: [],
+            scrapedAt: new Date().toISOString()
+        };
+
+        // 詳細説明
+        const descriptionElement = await page.$('.job-description, .work-content, .description-content');
+        if (descriptionElement) {
+            detail.detailedDescription = await descriptionElement.textContent() || '';
+        }
+
+        // 予算
+        const budgetElement = await page.$('.budget, .price-info, .work-budget');
+        if (budgetElement) {
+            detail.budget = await budgetElement.textContent() || '';
+        }
+
+        // 締切
+        const deadlineElement = await page.$('.deadline, .work-deadline, .due-date');
+        if (deadlineElement) {
+            detail.applicationDeadline = await deadlineElement.textContent() || '';
+        }
+
+        // クライアント評価
+        const ratingElement = await page.$('.rating, .client-rating, .evaluation-score');
+        if (ratingElement) {
+            const ratingText = await ratingElement.textContent();
+            detail.client.overallRating = ratingText || '';
+        }
+
+        // クライアント発注数
+        const orderCountElement = await page.$('.order-count, .client-orders, .work-count');
+        if (orderCountElement) {
+            const orderText = await orderCountElement.textContent();
+            detail.client.orderHistory = orderText || '';
+        }
+
+        return detail;
+
+    } catch (error) {
+        console.log(`⚠️ 詳細取得エラー:`, error);
+        return null;
+    }
 }
 
 // スクリプト実行

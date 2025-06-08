@@ -24,7 +24,13 @@
         "integrated-search": "npx ts-node -r dotenv/config scripts/integrated-job-search.ts",
         "search:basic": "npm run integrated-search",
         "search:high-rate": "npm run integrated-search -- --min-rate 4000",
-        "search:dev": "npm run integrated-search -- --categories web,mobile --keywords react,typescript,nodejs"
+        "search:dev": "npm run integrated-search -- --categories web,mobile --keywords react,typescript,nodejs",
+        "unified-report": "npx ts-node scripts/create-unified-report.ts",
+        "unified-report:3000": "npx ts-node scripts/create-unified-report.ts 3000",
+        "full-scrape-analysis": "npm run scrape-lancers && npm run full-analysis:detailed && npm run unified-report:3000",
+        "mega-analysis": "npm run scrape-lancers && npm run handler full-analysis 200 && npm run unified-report:3000",
+        "quick-analysis": "npm run full-analysis:quick && npm run unified-report -- 2000",
+        "super-analysis": "npm run scrape-lancers && npm run handler full-analysis 300 && npm run unified-report -- 2500"
     },
     "keywords": [
         "crowdworks",
