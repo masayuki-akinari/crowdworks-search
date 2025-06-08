@@ -2,6 +2,9 @@ require('dotenv').config();
 
 import { readFileSync, writeFileSync, existsSync, unlinkSync } from 'fs';
 import OpenAI from 'openai';
+// import { chromium } from 'playwright';
+// import { AppliedJobsService } from '../src/services/AppliedJobsService';
+// import { CrowdWorksCredentials } from '../src/types';
 
 // 型定義
 interface AnalysisResult {
@@ -122,6 +125,12 @@ const PROPOSAL_GENERATION_MIN_HOURLY_RATE = 3000; // 円
 
 // キャッシュファイルのパス
 const PROCESSED_JOBS_CACHE_FILE = 'output/processed-jobs.json';
+
+// 応募済み案件を取得する関数（現在は無効化）
+// async function getAppliedJobIds(): Promise<Set<string>> {
+//     // 応募済み案件の取得処理は現在無効化されています
+//     return new Set<string>();
+// }
 
 // 処理済み案件キャッシュを読み込む
 function loadProcessedJobsCache(): Map<string, ProcessedJobCache> {
@@ -343,8 +352,28 @@ function calculateRecommendationScore(
 }
 
 // 詳細データから元のタイトルを取得する関数
-function getOriginalJobData(jobId: string, detailsData: any[]): any {
-    return detailsData.find(job => job.jobId === jobId);
+function getOriginalJobData(jobId: string, detailsData: any[], lancersJobs?: any[]): any {
+    // まずCrowdWorksの詳細データから検索
+    const crowdWorksJob = detailsData.find(job => job.jobId === jobId);
+    if (crowdWorksJob) {
+        return crowdWorksJob;
+    }
+
+    // ランサーズの案件データから検索
+    if (lancersJobs) {
+        const lancersJob = lancersJobs.find(item => item.id === jobId);
+        if (lancersJob) {
+            return {
+                jobId: lancersJob.id,
+                title: lancersJob.title,
+                detailedDescription: lancersJob.description,
+                url: lancersJob.url,
+                source: 'lancers'
+            };
+        }
+    }
+
+    return null;
 }
 
 // 並列実行制御クラス
@@ -391,6 +420,9 @@ class ConcurrencyLimiter {
 async function main(): Promise<void> {
     console.log('🚀 おすすめ案件の計算を開始します...');
 
+    // 応募済み案件IDを取得（現在は無効化）
+    console.log('\n📋 応募済み案件の取得はスキップします（APIキー未設定のため）');
+
     // クローズした案件を削除
     cleanupClosedJobs();
 
@@ -408,37 +440,45 @@ async function main(): Promise<void> {
         let webDetailsData: any[] = [];
         let softwareDetailsData: any[] = [];
         let developmentDetailsData: any[] = [];
+        let lancersDetailsData: any[] = [];
 
-        // EC詳細データの読み込み
+        // CrowdWorks詳細データの読み込み
         try {
             ecDetailsData = JSON.parse(readFileSync('output/details-ec.json', 'utf8'));
-            console.log(`📂 EC詳細データ: ${ecDetailsData.length}件読み込み`);
+            console.log(`📂 CrowdWorks EC詳細データ: ${ecDetailsData.length}件読み込み`);
         } catch (error) {
-            console.log(`⚠️ EC詳細データの読み込みに失敗: ${error}`);
+            console.log(`⚠️ CrowdWorks EC詳細データの読み込みに失敗: ${error}`);
         }
 
-        // Web製品詳細データの読み込み
         try {
             webDetailsData = JSON.parse(readFileSync('output/details-web_products.json', 'utf8'));
-            console.log(`📂 Web製品詳細データ: ${webDetailsData.length}件読み込み`);
+            console.log(`📂 CrowdWorks Web製品詳細データ: ${webDetailsData.length}件読み込み`);
         } catch (error) {
-            console.log(`⚠️ Web製品詳細データの読み込みに失敗: ${error}`);
+            console.log(`⚠️ CrowdWorks Web製品詳細データの読み込みに失敗: ${error}`);
         }
 
-        // ソフトウェア開発詳細データの読み込み
         try {
             softwareDetailsData = JSON.parse(readFileSync('output/details-software_development.json', 'utf8'));
-            console.log(`📂 ソフトウェア開発詳細データ: ${softwareDetailsData.length}件読み込み`);
+            console.log(`📂 CrowdWorks ソフトウェア開発詳細データ: ${softwareDetailsData.length}件読み込み`);
         } catch (error) {
-            console.log(`⚠️ ソフトウェア開発詳細データの読み込みに失敗: ${error}`);
+            console.log(`⚠️ CrowdWorks ソフトウェア開発詳細データの読み込みに失敗: ${error}`);
         }
 
-        // 開発詳細データの読み込み
         try {
             developmentDetailsData = JSON.parse(readFileSync('output/details-development.json', 'utf8'));
-            console.log(`📂 開発詳細データ: ${developmentDetailsData.length}件読み込み`);
+            console.log(`📂 CrowdWorks 開発詳細データ: ${developmentDetailsData.length}件読み込み`);
         } catch (error) {
-            console.log(`⚠️ 開発詳細データの読み込みに失敗: ${error}`);
+            console.log(`⚠️ CrowdWorks 開発詳細データの読み込みに失敗: ${error}`);
+        }
+
+        // ランサーズ詳細データの読み込み
+        console.log(`🔍 ランサーズ詳細データの読み込みを開始...`);
+        try {
+            const lancersAllDetails = JSON.parse(readFileSync('output/lancers-all-details.json', 'utf8'));
+            lancersDetailsData = lancersAllDetails.details || [];
+            console.log(`📂 ランサーズ詳細データ: ${lancersDetailsData.length}件読み込み SUCCESS`);
+        } catch (error) {
+            console.log(`⚠️ ランサーズ詳細データの読み込みに失敗: ${error}`);
         }
 
         // AI分析済みデータの読み込み（オプション）
@@ -446,6 +486,7 @@ async function main(): Promise<void> {
         let webAnalyzedData: any[] = [];
         let softwareAnalyzedData: any[] = [];
         let developmentAnalyzedData: any[] = [];
+        let lancersAnalyzedData: any[] = [];
 
         try {
             ecAnalyzedData = JSON.parse(readFileSync('output/analyzed-ec.json', 'utf8'));
@@ -475,30 +516,64 @@ async function main(): Promise<void> {
             console.log(`⚠️ 開発カテゴリファイルが見つかりません: analyzed-development.json`);
         }
 
+        // ランサーズ分析データの読み込み
+        console.log(`🔍 ランサーズ分析データの読み込みを開始...`);
+        try {
+            lancersAnalyzedData = JSON.parse(readFileSync('output/analyzed-lancers.json', 'utf8'));
+            console.log(`🧠 ランサーズ AI分析データ: ${lancersAnalyzedData.length}件読み込み SUCCESS`);
+        } catch (error) {
+            console.log(`⚠️ ランサーズカテゴリファイルが見つかりません: analyzed-lancers.json - ${error}`);
+        }
+
         // 全カテゴリの分析データをマージして終了案件を除外
         const allAnalyzedJobs = [
             ...ecAnalyzedData,
             ...webAnalyzedData,
             ...softwareAnalyzedData,
-            ...developmentAnalyzedData
+            ...developmentAnalyzedData,
+            ...lancersAnalyzedData
         ];
+
+        console.log(`📊 統合後の全案件数: ${allAnalyzedJobs.length}件`);
+        console.log(`📊 EC: ${ecAnalyzedData.length}件, Web: ${webAnalyzedData.length}件, Software: ${softwareAnalyzedData.length}件, Development: ${developmentAnalyzedData.length}件, Lancers: ${lancersAnalyzedData.length}件`);
 
         // 現在の日付を取得
         const now = new Date();
         const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+
+        // ランサーズの案件データも読み込み
+        console.log(`🔍 ランサーズ案件データの読み込みを開始...`);
+        let lancersJobsData: any[] = [];
+        try {
+            const lancersAllJobs = JSON.parse(readFileSync('output/lancers-all-jobs.json', 'utf8'));
+            lancersJobsData = lancersAllJobs.jobs || [];
+            console.log(`📂 ランサーズ案件データ: ${lancersJobsData.length}件読み込み SUCCESS`);
+        } catch (error) {
+            console.log(`⚠️ ランサーズ案件データの読み込みに失敗: ${error}`);
+        }
 
         // 全詳細データをマージ
         const allDetailsData = [
             ...ecDetailsData,
             ...webDetailsData,
             ...softwareDetailsData,
-            ...developmentDetailsData
+            ...developmentDetailsData,
+            ...lancersDetailsData
         ];
+
+        // 🚀 統合前のLancers案件確認
+        const lancersInAll = allAnalyzedJobs.filter(job => job.jobId.includes('lancers_test'));
+        console.log(`🚀 デバッグ - allAnalyzedJobsにLancers案件: ${lancersInAll.length}件`);
+        lancersInAll.forEach(job => {
+            console.log(`   - ${job.jobId}: ${job.title}`);
+        });
 
         // 終了している案件を除外（応募締切が過ぎた案件）
         const activeJobs = allAnalyzedJobs.filter(job => {
             // 対応する詳細データを検索
             const detailData = allDetailsData.find(detail => detail.jobId === job.jobId);
+
+
 
             if (!detailData || !detailData.applicationDeadline) {
                 return true; // 詳細データまたは締切が設定されていない場合は有効とする
@@ -529,10 +604,15 @@ async function main(): Promise<void> {
         console.log(`📅 応募締切チェック: 総${allAnalyzedJobs.length}件中、${excludedCount}件の終了案件を除外`);
         console.log(`✅ 有効案件: ${activeJobs.length}件で処理を継続`);
 
+        // 応募済み案件を除外（現在は無効化）
+        const notAppliedJobs = activeJobs; // 除外処理をスキップ
+        console.log(`📝 応募済み案件チェック: スキップ（APIキー未設定）`);
+        console.log(`✅ 最終対象案件: ${notAppliedJobs.length}件で処理を継続`);
+
         console.log(`\n📊 有効案件の分布:`);
 
         // フィルタリング済みの有効案件のみを処理
-        activeJobs.forEach(item => {
+        notAppliedJobs.forEach(item => {
             const hourlyRate = parseHourlyRate(item.想定時給);
             const workloadHours = parseWorkloadHours(item.工数_見積もり);
             const difficultyScore = parseDifficultyScore(item.難易度);
@@ -544,17 +624,21 @@ async function main(): Promise<void> {
             let categoryName = '';
 
             if (ecAnalyzedData.some(job => job.jobId === item.jobId)) {
-                originalJob = getOriginalJobData(item.jobId, ecDetailsData);
+                originalJob = getOriginalJobData(item.jobId, ecDetailsData, lancersJobsData);
                 categoryName = 'EC';
             } else if (webAnalyzedData.some(job => job.jobId === item.jobId)) {
-                originalJob = getOriginalJobData(item.jobId, webDetailsData);
+                originalJob = getOriginalJobData(item.jobId, webDetailsData, lancersJobsData);
                 categoryName = 'Web製品';
             } else if (softwareAnalyzedData.some(job => job.jobId === item.jobId)) {
-                originalJob = getOriginalJobData(item.jobId, softwareDetailsData);
+                originalJob = getOriginalJobData(item.jobId, softwareDetailsData, lancersJobsData);
                 categoryName = 'ソフトウェア開発';
             } else if (developmentAnalyzedData.some(job => job.jobId === item.jobId)) {
-                originalJob = getOriginalJobData(item.jobId, developmentDetailsData);
+                originalJob = getOriginalJobData(item.jobId, developmentDetailsData, lancersJobsData);
                 categoryName = '開発';
+            } else if (lancersAnalyzedData.some(job => job.jobId === item.jobId)) {
+                originalJob = getOriginalJobData(item.jobId, lancersDetailsData, lancersJobsData);
+                categoryName = 'ランサーズ';
+                console.log(`🚀 Lancers案件処理: ${item.jobId} - ${item.title}`);
             }
 
             const proposalAmount = Math.round(workloadHours * PROPOSAL_GENERATION_MIN_HOURLY_RATE);
@@ -562,6 +646,12 @@ async function main(): Promise<void> {
             const finishDate = new Date();
             finishDate.setDate(finishDate.getDate() + finishDays);
             const estimatedFinishDate = finishDate.toISOString().split('T')[0];
+
+            // リンクの生成（プラットフォームに応じて）
+            let jobLink = `https://crowdworks.jp/public/jobs/${item.jobId}`;
+            if (categoryName === 'ランサーズ') {
+                jobLink = originalJob?.url || `https://www.lancers.jp/work/detail/${item.jobId}`;
+            }
 
             scoredJobs.push({
                 ...item,
@@ -571,14 +661,14 @@ async function main(): Promise<void> {
                 difficulty_score: difficultyScore,
                 skill_fit_score: skillFitScore,
                 recommendation_score: recommendationScore,
-                link: `https://crowdworks.jp/public/jobs/${item.jobId}`,
+                link: jobLink,
                 original_title: originalJob?.title || item.title,
                 proposal_amount: proposalAmount,
                 estimated_finish_date: estimatedFinishDate
             });
         });
 
-        console.log(`✅ 有効案件処理完了: ${activeJobs.length}件`);
+        console.log(`✅ 有効案件処理完了: ${notAppliedJobs.length}件`);
 
         if (scoredJobs.length === 0) {
             console.error('❌ データが読み込めませんでした');
@@ -616,8 +706,8 @@ async function main(): Promise<void> {
                     return { success: true, index, fromCache: true };
                 } else {
                     // キャッシュミス：新規でGPT処理
-                    const allDetailsData = [...ecDetailsData, ...webDetailsData, ...softwareDetailsData, ...developmentDetailsData];
-                    const originalJob = getOriginalJobData(job.jobId, allDetailsData);
+                    const allDetailsData = [...ecDetailsData, ...webDetailsData, ...softwareDetailsData, ...developmentDetailsData, ...lancersDetailsData];
+                    const originalJob = getOriginalJobData(job.jobId, allDetailsData, lancersJobsData);
 
                     const { score, analysis } = await limiter.execute(() =>
                         analyzeSkillFit(job, originalJob)
@@ -704,8 +794,8 @@ async function main(): Promise<void> {
                     return { success: true, index, fromCache: true };
                 } else {
                     // キャッシュミス：新規でGPT処理
-                    const allDetailsData = [...ecDetailsData, ...webDetailsData, ...softwareDetailsData, ...developmentDetailsData];
-                    const originalJob = getOriginalJobData(job.jobId, allDetailsData);
+                    const allDetailsData = [...ecDetailsData, ...webDetailsData, ...softwareDetailsData, ...developmentDetailsData, ...lancersDetailsData];
+                    const originalJob = getOriginalJobData(job.jobId, allDetailsData, lancersJobsData);
 
                     const { greeting, delivery_estimate, questions } = await proposalLimiter.execute(() =>
                         generateProposalContent(job, originalJob)
