@@ -15,6 +15,7 @@ if (!process.env['AWS_LAMBDA_FUNCTION_NAME']) {
 
 import { Context } from 'aws-lambda';
 import { chromium, Browser, Page } from 'playwright';
+import { LancersService, LancersJob, LancersJobDetail, LancersScrapingResult } from '../services/LancersService';
 
 // Lambda Event Types
 interface ScheduledExecutionEvent {
@@ -957,9 +958,15 @@ export async function runHandlerCLI(): Promise<void> {
     console.log('  scrape-web [件数]    - Web製品案件取得 (デフォルト: 50件)');
     console.log('  scrape-dev [件数]    - システム開発案件取得 (デフォルト: 50件)');
     console.log('  scrape-app [件数]    - アプリ開発案件取得 (デフォルト: 50件)');
+    console.log('  lancers-system [件数] - ランサーズシステム開発案件取得 (デフォルト: 20件)');
+    console.log('  lancers-web [件数]    - ランサーズWeb案件取得 (デフォルト: 20件)');
+    console.log('  lancers-app [件数]    - ランサーズアプリ案件取得 (デフォルト: 20件)');
+    console.log('  lancers-design [件数] - ランサーズデザイン案件取得 (デフォルト: 20件)');
     console.log('');
+    console.log('📝 環境変数 LANCERS_EMAIL, LANCERS_PASSWORD を設定するとログインして取得します');
     console.log('例: npm run handler full-analysis 20');
     console.log('例: npm run handler scrape-ec 30');
+    console.log('例: npm run handler lancers-system 15');
     return;
   }
 
@@ -1017,6 +1024,58 @@ export async function runHandlerCLI(): Promise<void> {
         console.log(`✅ アプリ開発取得完了: ${appResult.jobs.length}件一覧, ${appResult.jobDetails.length}件詳細`);
         break;
 
+      case 'lancers-system':
+        console.log(`💻 ランサーズシステム開発案件取得実行中 (${maxJobs}件)...`);
+        const lancersSystemResult = await scrapeLancersJobsByCategory({
+          category: 'system',
+          maxJobs,
+          ...(process.env['LANCERS_EMAIL'] && process.env['LANCERS_PASSWORD'] && { 
+            email: process.env['LANCERS_EMAIL'], 
+            password: process.env['LANCERS_PASSWORD'] 
+          })
+        });
+        console.log(`✅ ランサーズシステム開発取得完了: ${lancersSystemResult.jobs.length}件取得`);
+        break;
+
+      case 'lancers-web':
+        console.log(`🌐 ランサーズWeb案件取得実行中 (${maxJobs}件)...`);
+        const lancersWebResult = await scrapeLancersJobsByCategory({
+          category: 'web',
+          maxJobs,
+          ...(process.env['LANCERS_EMAIL'] && process.env['LANCERS_PASSWORD'] && { 
+            email: process.env['LANCERS_EMAIL'], 
+            password: process.env['LANCERS_PASSWORD'] 
+          })
+        });
+        console.log(`✅ ランサーズWeb取得完了: ${lancersWebResult.jobs.length}件取得`);
+        break;
+
+      case 'lancers-app':
+        console.log(`📱 ランサーズアプリ案件取得実行中 (${maxJobs}件)...`);
+        const lancersAppResult = await scrapeLancersJobsByCategory({
+          category: 'app',
+          maxJobs,
+          ...(process.env['LANCERS_EMAIL'] && process.env['LANCERS_PASSWORD'] && { 
+            email: process.env['LANCERS_EMAIL'], 
+            password: process.env['LANCERS_PASSWORD'] 
+          })
+        });
+        console.log(`✅ ランサーズアプリ取得完了: ${lancersAppResult.jobs.length}件取得`);
+        break;
+
+      case 'lancers-design':
+        console.log(`🎨 ランサーズデザイン案件取得実行中 (${maxJobs}件)...`);
+        const lancersDesignResult = await scrapeLancersJobsByCategory({
+          category: 'design',
+          maxJobs,
+          ...(process.env['LANCERS_EMAIL'] && process.env['LANCERS_PASSWORD'] && { 
+            email: process.env['LANCERS_EMAIL'], 
+            password: process.env['LANCERS_PASSWORD'] 
+          })
+        });
+        console.log(`✅ ランサーズデザイン取得完了: ${lancersDesignResult.jobs.length}件取得`);
+        break;
+
       default:
         console.log(`❌ 不明なコマンド: ${command}`);
         console.log('利用可能なコマンドを確認するには引数なしで実行してください。');
@@ -1034,4 +1093,180 @@ if (require.main === module) {
     console.error('❌ CLI実行エラー:', error);
     process.exit(1);
   });
+}
+
+/**
+ * ランサーズ案件スクレイピング（ログイン機能付き）
+ */
+export async function scrapeLancersJobsByCategory(params: {
+  category: string;
+  maxJobs: number;
+  email?: string;
+  password?: string;
+}): Promise<LancersScrapingResult> {
+  const { category, maxJobs, email, password } = params;
+  
+  let browser: Browser | null = null;
+  
+  try {
+    console.log(`🚀 ランサーズ「${category}」カテゴリスクレイピング開始`);
+    
+    browser = await chromium.launch({
+      headless: true,
+      args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage']
+    });
+    
+    const page = await browser.newPage();
+    
+    // User-Agentを設定
+    await page.setExtraHTTPHeaders({
+      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+    });
+    
+    const lancersService = new LancersService(page);
+    
+    // ログイン処理（認証情報がある場合）
+    if (email && password) {
+      console.log('🔐 ランサーズログイン実行中...');
+      const loginSuccess = await lancersService.login(email, password);
+      if (loginSuccess) {
+        console.log('✅ ランサーズログイン成功');
+      } else {
+        console.log('⚠️ ランサーズログイン失敗 - 公開案件のみ取得します');
+      }
+    } else {
+      console.log('ℹ️ 認証情報なし - 公開案件のみ取得します');
+    }
+    
+    // 案件スクレイピング実行
+    const jobsResult = await lancersService.scrapeJobs(category, maxJobs);
+    
+    console.log(`✅ ランサーズスクレイピング完了: ${jobsResult.length}件取得`);
+    
+    return {
+      jobs: jobsResult,
+      jobDetails: []
+    };
+    
+  } catch (error) {
+    console.error('❌ ランサーズスクレイピングエラー:', error);
+    throw error;
+  } finally {
+    if (browser) {
+      await browser.close();
+    }
+  }
+}
+
+/**
+ * ランサーズ案件詳細取得
+ */
+export async function scrapeLancersJobDetail(jobUrl: string, email?: string, password?: string): Promise<LancersJobDetail | null> {
+  let browser: Browser | null = null;
+  
+  try {
+    browser = await chromium.launch({
+      headless: true,
+      args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage']
+    });
+    
+    const page = await browser.newPage();
+    await page.setExtraHTTPHeaders({
+      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+    });
+    
+    const lancersService = new LancersService(page);
+    
+    // ログイン処理（認証情報がある場合）
+    if (email && password) {
+      const loginSuccess = await lancersService.login(email, password);
+      if (!loginSuccess) {
+        console.log('⚠️ ランサーズログイン失敗 - 詳細取得に失敗する可能性があります');
+      }
+    }
+    
+    // 詳細取得
+    const detail = await lancersService.scrapeJobDetail(jobUrl);
+    
+    return detail;
+    
+  } catch (error) {
+    console.error('❌ ランサーズ詳細取得エラー:', error);
+    return null;
+  } finally {
+    if (browser) {
+      await browser.close();
+    }
+  }
+}
+
+/**
+ * ランサーズ案件スクレイピング（詳細付き・ログイン機能付き）
+ */
+export async function scrapeLancersJobsByCategoryWithDetails(params: {
+  category: string;
+  maxJobs: number;
+  maxDetails?: number;
+  email?: string;
+  password?: string;
+}): Promise<{
+  jobs: LancersJob[];
+  jobDetails: LancersJobDetail[];
+}> {
+  const { category, maxJobs, maxDetails = 10, email, password } = params;
+  
+  try {
+    console.log(`🚀 ランサーズ「${category}」カテゴリ詳細付きスクレイピング開始`);
+    
+    // 案件リスト取得
+    const scrapingResult = await scrapeLancersJobsByCategory({
+      category,
+      maxJobs,
+      ...(email && password && { email, password })
+    });
+    
+    if (scrapingResult.jobs.length === 0) {
+      console.log('⚠️ 案件が見つかりませんでした');
+      return { jobs: [], jobDetails: [] };
+    }
+    
+    console.log(`📋 ${scrapingResult.jobs.length}件の案件から詳細を取得中...`);
+    
+    // 詳細取得対象を制限
+    const jobsForDetails = scrapingResult.jobs.slice(0, maxDetails);
+    const jobDetails: LancersJobDetail[] = [];
+    
+    for (let i = 0; i < jobsForDetails.length; i++) {
+      const job = jobsForDetails[i];
+      if (!job) continue; // undefined チェック
+      
+      console.log(`📋 詳細取得中 ${i + 1}/${jobsForDetails.length}: ${job.title}`);
+
+      try {
+        const detail = await scrapeLancersJobDetail(job.url, email, password);
+        if (detail) {
+          jobDetails.push(detail);
+        }
+        
+        // レート制限対策（詳細取得間隔）
+        if (i < jobsForDetails.length - 1) {
+          await new Promise(resolve => setTimeout(resolve, 3000));
+        }
+        
+      } catch (error) {
+        console.error(`❌ 詳細取得エラー (${job.url}):`, error);
+      }
+    }
+    
+    console.log(`✅ ランサーズ詳細付きスクレイピング完了: 案件${scrapingResult.jobs.length}件, 詳細${jobDetails.length}件`);
+    
+    return {
+      jobs: scrapingResult.jobs,
+      jobDetails
+    };
+    
+  } catch (error) {
+    console.error('❌ ランサーズ詳細付きスクレイピングエラー:', error);
+    return { jobs: [], jobDetails: [] };
+  }
 }

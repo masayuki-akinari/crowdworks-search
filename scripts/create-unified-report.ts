@@ -32,14 +32,14 @@ interface Job {
     scrapedAt: string;
 }
 
-interface AnalyzedJob {
-    jobId: string;
-    title: string;
-    工数_見積もり: string;
-    想定時給: string;
-    難易度: string;
-    gpt_summary: string;
-}
+// interface AnalyzedJob {
+//     jobId: string;
+//     title: string;
+//     工数_見積もり: string;
+//     想定時給: string;
+//     難易度: string;
+//     gpt_summary: string;
+// }
 
 interface ProcessedAnalyzedJob {
     hourlyRate: number;
@@ -66,13 +66,13 @@ class UnifiedReportGenerator {
 
 
     // 最新のクラウドワークス分析ファイルを取得
-    private getLatestCrowdWorksFiles(): string[] {
-        const files = fs.readdirSync(this.outputDir)
-            .filter(file => file.startsWith('analyzed-') && file.endsWith('.json'))
-            .map(file => path.join(this.outputDir, file));
+    // private getLatestCrowdWorksFiles(): string[] {
+    //     const files = fs.readdirSync(this.outputDir)
+    //         .filter(file => file.startsWith('analyzed-') && file.endsWith('.json'))
+    //         .map(file => path.join(this.outputDir, file));
 
-        return files;
-    }
+    //     return files;
+    // }
 
     /**
      * データファイル読み込み
@@ -130,36 +130,146 @@ class UnifiedReportGenerator {
         return Math.round(amount / 40);
     }
 
+    /**
+     * 予算額を数値で抽出
+     */
+    private extractBudgetAmount(budget: string): number {
+        if (!budget) return 0;
+        
+        // 「～」や「-」で区切られた範囲の場合は上限値を取得
+        const rangeMatch = budget.match(/([0-9,]+)\s*円\s*[~～-]\s*([0-9,]+)\s*円/);
+        if (rangeMatch && rangeMatch[1] && rangeMatch[2]) {
+            const min = parseInt(rangeMatch[1].replace(/,/g, '')) || 0;
+            const max = parseInt(rangeMatch[2].replace(/,/g, '')) || 0;
+            return Math.max(min, max); // 上限値を返す
+        }
+        
+        // 単一の金額
+        const singleMatch = budget.match(/([0-9,]+)\s*円/);
+        if (singleMatch && singleMatch[1]) {
+            return parseInt(singleMatch[1].replace(/,/g, '')) || 0;
+        }
+        
+        return 0;
+    }
+
     // 分析済みジョブの処理
-    private processAnalyzedJob(job: AnalyzedJob): ProcessedAnalyzedJob {
-        // 時給の抽出（例："2500円" → 2500）
-        let hourlyRate = 0;
-        if (job.想定時給) {
-            const rateMatch = job.想定時給.match(/(\d+)/);
-            if (rateMatch && rateMatch[1]) {
-                hourlyRate = parseInt(rateMatch[1]);
-            }
-        }
+    // private processAnalyzedJob(job: AnalyzedJob): ProcessedAnalyzedJob {
+    //     // 時給の抽出（例："2500円" → 2500）
+    //     let hourlyRate = 0;
+    //     if (job.想定時給) {
+    //         const rateMatch = job.想定時給.match(/(\d+)/);
+    //         if (rateMatch && rateMatch[1]) {
+    //             hourlyRate = parseInt(rateMatch[1]);
+    //         }
+    //     }
 
-        // 工数の抽出（例："20時間" → 20）
-        let workHours = 0;
-        if (job.工数_見積もり) {
-            const hoursMatch = job.工数_見積もり.match(/(\d+)/);
-            if (hoursMatch && hoursMatch[1]) {
-                workHours = parseInt(hoursMatch[1]);
-            }
-        }
+    //     // 工数の抽出（例："20時間" → 20）
+    //     let workHours = 0;
+    //     if (job.工数_見積もり) {
+    //         const hoursMatch = job.工数_見積もり.match(/(\d+)/);
+    //         if (hoursMatch && hoursMatch[1]) {
+    //             workHours = parseInt(hoursMatch[1]);
+    //         }
+    //     }
 
-        return {
-            hourlyRate,
-            workHours,
-            title: job.title || '',
-            description: job.gpt_summary || '',
-            url: `https://crowdworks.jp/public/jobs/${job.jobId}`,
-            category: 'プログラミング',
-            difficulty: job.難易度 || '',
-            analysis: job.gpt_summary || ''
-        };
+    //     return {
+    //         hourlyRate,
+    //         workHours,
+    //         title: job.title || '',
+    //         description: job.gpt_summary || '',
+    //         url: `https://crowdworks.jp/public/jobs/${job.jobId}`,
+    //         category: 'プログラミング',
+    //         difficulty: job.難易度 || '',
+    //         analysis: job.gpt_summary || ''
+    //     };
+    // }
+
+    /**
+     * おすすめスコアを計算
+     */
+    private calculateRecommendationScore(job: any): number {
+        let score = 0;
+        
+        // 基本スコア（時給）
+        const hourlyRate = job.hourlyRate || 0;
+        score += hourlyRate;
+        
+        // 技術スキル重み付け
+        const techKeywords = ['React', 'Vue', 'Angular', 'TypeScript', 'Node.js', 'Python', 'AI', 'Machine Learning', 'Bubble', 'Figma'];
+        let techScore = 0;
+        const description = (job.description || '').toLowerCase();
+        techKeywords.forEach(keyword => {
+            if (description.includes(keyword.toLowerCase())) {
+                techScore += 1000; // 技術スキルボーナス
+            }
+        });
+        score += techScore;
+        
+        // 継続性ボーナス
+        if (description.includes('継続') || description.includes('長期') || description.includes('パートナー')) {
+            score += 2000;
+        }
+        
+        // 急募ボーナス
+        if (description.includes('急募') || description.includes('即戦力')) {
+            score += 1500;
+        }
+        
+        // 経験者優遇ボーナス
+        if (description.includes('経験者') || description.includes('エキスパート') || description.includes('スペシャリスト')) {
+            score += 1000;
+        }
+        
+        // フルリモートボーナス
+        if (description.includes('フルリモート') || description.includes('完全在宅') || description.includes('在宅')) {
+            score += 500;
+        }
+        
+        // 高額案件ボーナス（時給10000円以上）
+        if (hourlyRate >= 10000) {
+            score += 3000;
+        }
+        
+        return score;
+    }
+
+    /**
+     * 重複除去
+     */
+    private removeDuplicates(jobs: any[]): any[] {
+        const uniqueJobs = new Map<string, any>();
+        
+        jobs.forEach(job => {
+            const key = `${job.title}-${job.platform}-${job.url}`;
+            if (!uniqueJobs.has(key)) {
+                uniqueJobs.set(key, job);
+            }
+        });
+        
+        return Array.from(uniqueJobs.values());
+    }
+
+    /**
+     * 技術キーワード分析
+     */
+    private getTechKeywords(jobs: any[]): Array<{keyword: string, count: number}> {
+        const techKeywords = ['React', 'Vue', 'Angular', 'TypeScript', 'Node.js', 'Python', 'AI', 'Machine Learning', 'Bubble', 'Figma', 'WordPress', 'Laravel', 'Next.js', 'Flutter', 'Swift', 'Kotlin'];
+        const keywordCounts = new Map<string, number>();
+        
+        techKeywords.forEach(keyword => {
+            const count = jobs.filter(job => {
+                const description = (job.description || '').toLowerCase();
+                return description.includes(keyword.toLowerCase());
+            }).length;
+            if (count > 0) {
+                keywordCounts.set(keyword, count);
+            }
+        });
+        
+        return Array.from(keywordCounts.entries())
+            .map(([keyword, count]) => ({keyword, count}))
+            .sort((a, b) => b.count - a.count);
     }
 
     /**
@@ -175,15 +285,9 @@ class UnifiedReportGenerator {
         const processedLancers: Job[] = lancersJobs
             .filter(job => job.budget && job.budget.trim() !== '')
             .map(job => {
-                // 予算から金額を抽出
+                // 修正された予算抽出ロジックを使用
                 const budgetText = job.budget || '';
-                const amounts = budgetText.match(/(\d{1,3}(?:,\d{3})*)/g);
-
-                let amount = 0;
-                if (amounts && amounts.length > 0) {
-                    // 最初の金額を使用（通常は最低金額）
-                    amount = parseInt(amounts[0].replace(/,/g, ''));
-                }
+                const amount = this.extractBudgetAmount(budgetText);
 
                 // 時給を推定（固定報酬を40時間で割る概算）
                 const estimatedHourlyRate = amount > 0 ? Math.round(amount / 40) : 0;
@@ -240,10 +344,21 @@ class UnifiedReportGenerator {
                 platform: 'クラウドワークス',
                 hourlyRate: (job as any).想定時給 || 0
             }))
-        ].sort((a, b) => (b.hourlyRate || 0) - (a.hourlyRate || 0));
+        ];
 
-        const totalJobs = allJobs.length;
-        const hourlyRates = allJobs.map(job => job.hourlyRate || 0).filter(rate => rate > 0);
+        // 重複を除去
+        const uniqueJobs = this.removeDuplicates(allJobs);
+
+        // おすすめスコアで並び替え
+        const sortedJobs = uniqueJobs
+            .map(job => ({
+                ...job,
+                recommendationScore: this.calculateRecommendationScore(job)
+            }))
+            .sort((a, b) => b.recommendationScore - a.recommendationScore);
+
+        const totalJobs = sortedJobs.length;
+        const hourlyRates = sortedJobs.map(job => job.hourlyRate || 0).filter(rate => rate > 0);
         const maxHourlyRate = hourlyRates.length > 0 ? Math.max(...hourlyRates) : 0;
         const minHourlyRateActual = hourlyRates.length > 0 ? Math.min(...hourlyRates) : 0;
         const avgHourlyRate = hourlyRates.length > 0 ? Math.round(hourlyRates.reduce((sum, rate) => sum + rate, 0) / hourlyRates.length) : 0;
@@ -253,12 +368,13 @@ class UnifiedReportGenerator {
 > **生成日時**: ${dateStr} ${timeStr}  
 > **対象**: Webエンジニア向け高時給案件  
 > **最低時給**: ${minHourlyRate.toLocaleString()}円以上  
+> **おすすめ順**: 時給 + 技術要件 + 継続性 + 急募度などを総合評価
 
 ## 📊 統合サマリー
 
 | 項目 | ランサーズ | クラウドワークス | 合計 |
 |------|------------|------------------|------|
-| 高時給案件数 | ${highPayingJobs.lancers.length}件 | ${highPayingJobs.crowdworks.length}件 | ${totalJobs}件 |
+| 高時給案件数 | ${highPayingJobs.lancers.length}件 | ${highPayingJobs.crowdworks.length}件 | ${totalJobs}件（重複除去後） |
 | 最高時給 | ${highPayingJobs.lancers.length > 0 ? Math.max(...highPayingJobs.lancers.map(j => j.hourlyRate || 0)).toLocaleString() : '0'}円 | ${highPayingJobs.crowdworks.length > 0 ? Math.max(...highPayingJobs.crowdworks.map(j => (j as any).想定時給 || 0)).toLocaleString() : '0'}円 | ${maxHourlyRate.toLocaleString()}円 |
 | 平均時給 | ${highPayingJobs.lancers.length > 0 ? Math.round(highPayingJobs.lancers.reduce((sum, j) => sum + (j.hourlyRate || 0), 0) / highPayingJobs.lancers.length).toLocaleString() : '0'}円 | ${highPayingJobs.crowdworks.length > 0 ? Math.round(highPayingJobs.crowdworks.reduce((sum, j) => sum + ((j as any).想定時給 || 0), 0) / highPayingJobs.crowdworks.length).toLocaleString() : '0'}円 | ${avgHourlyRate.toLocaleString()}円 |
 
@@ -266,7 +382,7 @@ class UnifiedReportGenerator {
 
 ### 💡 **主要な発見**
 
-- **高時給案件の総数**: ${totalJobs}件
+- **高時給案件の総数**: ${totalJobs}件（重複除去後）
 - **最高時給**: ${maxHourlyRate.toLocaleString()}円
 - **時給分布**: ${minHourlyRateActual.toLocaleString()}円 〜 ${maxHourlyRate.toLocaleString()}円
 - **平均時給**: ${avgHourlyRate.toLocaleString()}円
@@ -276,36 +392,40 @@ class UnifiedReportGenerator {
 ${highPayingJobs.lancers.length > 0 ? '- **ランサーズ**: ' + highPayingJobs.lancers.length + '件の高時給案件（競争が少なく穴場の可能性）' : '- **ランサーズ**: 高時給案件なし'}
 ${highPayingJobs.crowdworks.length > 0 ? '- **クラウドワークス**: ' + highPayingJobs.crowdworks.length + '件の高時給案件（案件数豊富）' : '- **クラウドワークス**: 高時給案件なし'}
 
-## 💼 高時給案件ランキング（時給順）
+## 💼 おすすめ案件ランキング（総合評価順）
 
 `;
 
-        // 全案件を時給順でソート表示
-        allJobs.forEach((job, index) => {
+        // おすすめ順でソート表示
+        sortedJobs.forEach((job, index) => {
             const platform = job.platform === 'ランサーズ' ? '🟦' : '🟨';
             const urgent = job.isUrgent ? '🔥 **急募** ' : '';
 
             report += `### ${index + 1}位: ${platform} ${urgent}${job.title || 'タイトル不明'}
 
 **💰 想定時給:** ${(job.hourlyRate || 0).toLocaleString()}円  
+**📊 おすすめスコア:** ${job.recommendationScore.toLocaleString()}pt  
 **🏷️ カテゴリ:** ${job.category || 'カテゴリ不明'}  
 **📱 プラットフォーム:** ${job.platform}  
 **🔗 案件URL:** ${job.url || '#'}
 
 **📝 概要:**  
-${job.description ? job.description.substring(0, 200) + '...' : job.analysis || '詳細情報なし'}
+${job.description ? job.description.substring(0, 300) + '...' : job.analysis || '詳細情報なし'}
 
 ---
 
 `;
         });
 
+        // 技術キーワード分析
+        const techKeywords = this.getTechKeywords(sortedJobs);
+
         report += `
 ## 🎯 戦略的提案
 
 ### 📋 **おすすめアクション**
 
-1. **即座に応募すべき案件**: 上位5件（時給${Math.round(maxHourlyRate * 0.8).toLocaleString()}円以上）
+1. **即座に応募すべき案件**: 上位5件（おすすめスコア${sortedJobs.length > 4 ? sortedJobs[4].recommendationScore.toLocaleString() : '10,000'}pt以上）
 2. **ポートフォリオ強化**: ${highPayingJobs.lancers.length > 0 && highPayingJobs.crowdworks.length > 0 ? '両プラットフォームでの実績作り' : '主要プラットフォームでの実績作り'}
 3. **スキルアップ領域**: システム開発、API連携、高度なフロントエンド技術
 
@@ -313,6 +433,10 @@ ${job.description ? job.description.substring(0, 200) + '...' : job.analysis || 
 
 - **ランサーズ**: ${highPayingJobs.lancers.length > 0 ? '競争が少なく高時給を狙いやすい' : '高時給案件が少ないため要注意'}
 - **クラウドワークス**: ${highPayingJobs.crowdworks.length > 0 ? '案件数が豊富で安定収入を期待できる' : '高時給案件獲得に向けた戦略的アプローチが必要'}
+
+### 🔥 **注目技術キーワード**
+
+${techKeywords.map(tech => `- **${tech.keyword}**: ${tech.count}件`).join('\n')}
 
 ---
 
@@ -323,7 +447,7 @@ ${job.description ? job.description.substring(0, 200) + '...' : job.analysis || 
     }
 
     // メイン実行
-    async execute(minHourlyRate: number = 3000): Promise<void> {
+    async execute(minHourlyRate: number): Promise<void> {
         console.log('🚀 統合レポート生成を開始します...');
         console.log(`💰 最低時給: ${minHourlyRate}円`);
 
@@ -368,10 +492,10 @@ ${job.description ? job.description.substring(0, 200) + '...' : job.analysis || 
 
 // メイン実行
 async function main() {
+    // コマンドライン引数から最低時給を取得
+    const minHourlyRate = process.argv[2] ? parseInt(process.argv[2]) : 3000;
+    
     console.log('🚀 統合レポート生成を開始します...');
-
-    // 設定
-    const minHourlyRate = 1000; // 3000から1000に変更
     console.log(`💰 最低時給: ${minHourlyRate}円`);
 
     const generator = new UnifiedReportGenerator();
