@@ -446,6 +446,9 @@ export class LancersService {
         try {
             await this.page.goto(jobUrl, { waitUntil: 'networkidle', timeout: 30000 });
 
+            // 少し待機してページが完全に読み込まれるのを待つ
+            await this.page.waitForTimeout(2000);
+
             const detail = await this.page.evaluate(() => {
                 const getTextContent = (selector: string): string => {
                     const element = document.querySelector(selector);
@@ -457,10 +460,51 @@ export class LancersService {
                     return match?.[1] ? parseInt(match[1]) : 0;
                 };
 
-                // 基本情報の取得
-                const title = getTextContent('h1, .p-work-detail__title h1');
+                // タイトルの取得（テストで成功した手法を使用）
+                const title = (() => {
+                    const h1 = document.querySelector('h1');
+                    if (!h1) return '';
+
+                    // "【急募】オンライン子供向けプログラミングレッスン講師を募集！の仕事 [IT・通信・インターネット]"
+                    // から "【急募】オンライン子供向けプログラミングレッスン講師を募集！" を抽出
+                    const fullText = h1.textContent || '';
+                    const match = fullText.match(/^(.+?)の仕事/);
+                    return match ? match[1]!.trim() : fullText.replace(/\s*\[.*?\]\s*$/, '').trim();
+                })();
+
+                // 予算の取得（定義リストからの抽出）
+                const budget = (() => {
+                    const terms = Array.from(document.querySelectorAll('dt'));
+                    for (const term of terms) {
+                        if (term.textContent?.includes('提示した予算') || term.textContent?.includes('予算')) {
+                            const dd = term.nextElementSibling;
+                            if (dd && dd.tagName === 'DD') {
+                                return dd.textContent?.trim() || '';
+                            }
+                        }
+                    }
+                    return '';
+                })();
+
+                // 詳細説明の取得（定義リストからの抽出）
+                const detailedDescription = (() => {
+                    const terms = Array.from(document.querySelectorAll('dt'));
+                    for (const term of terms) {
+                        if (term.textContent?.includes('依頼概要')) {
+                            const dd = term.nextElementSibling;
+                            if (dd && dd.tagName === 'DD') {
+                                const text = dd.textContent?.trim() || '';
+                                // 最初の500文字に制限（詳細版なので少し長めに）
+                                return text.length > 500 ? text.substring(0, 500) + '...' : text;
+                            }
+                        }
+                    }
+                    // フォールバック: 従来のセレクタも試す
+                    return getTextContent('.p-work-detail__description, .work-description');
+                })();
+
+                // その他の情報は従来の手法で取得
                 const paymentType = getTextContent('.p-work-detail__price-type, .price-type');
-                const budget = getTextContent('.p-work-detail__price, .work-price');
                 const deliveryDate = getTextContent('.p-work-detail__delivery, .delivery-date');
                 const postDate = getTextContent('.p-work-detail__posted, .posted-date');
                 const applicationDeadline = getTextContent('.p-work-detail__deadline, .deadline');
@@ -470,9 +514,6 @@ export class LancersService {
                 const contractCount = getNumbers(getTextContent('.p-work-detail__contracts, .contracts-count'));
                 const recruitmentCount = getNumbers(getTextContent('.p-work-detail__recruitment, .recruitment-count'));
                 const favoriteCount = getNumbers(getTextContent('.p-work-detail__favorites, .favorites-count'));
-
-                // 詳細説明
-                const detailedDescription = getTextContent('.p-work-detail__description, .work-description');
 
                 // クライアント情報
                 const clientName = getTextContent('.p-work-detail__client-name, .client-name');

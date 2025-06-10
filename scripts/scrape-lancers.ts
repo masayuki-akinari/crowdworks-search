@@ -29,15 +29,18 @@ async function main(): Promise<void> {
 
         // const lancersService = new LancersService(page);
 
-        // 取得するカテゴリとそれぞれの最大件数
+        // 取得するカテゴリとそれぞれの最大件数（10件ずつに変更）
         const categories = [
-            { name: 'system', maxJobs: 100 },      // システム開発・運用
-            { name: 'web', maxJobs: 100 },         // Web制作・Webデザイン
-            { name: 'app', maxJobs: 100 },         // スマホアプリ・モバイル開発
-            { name: 'design', maxJobs: 100 },      // デザイン
-            { name: 'writing', maxJobs: 50 },      // ライティング
-            { name: 'translation', maxJobs: 50 },  // 翻訳
+            { name: 'system', url: 'https://www.lancers.jp/work/search/system' },
+            { name: 'web', url: 'https://www.lancers.jp/work/search/web' },
+            { name: 'app', url: 'https://www.lancers.jp/work/search/app' },
+            { name: 'design', url: 'https://www.lancers.jp/work/search/design' },
+            { name: 'writing', url: 'https://www.lancers.jp/work/search/writing' },
+            { name: 'translation', url: 'https://www.lancers.jp/work/search/translation' }
         ];
+
+        const itemsPerCategory = 5; // 各カテゴリから5件取得（合計30件）
+        const detailsLimit = 5; // 詳細取得も5件に制限
 
         const allJobs: LancersJob[] = [];
         const allDetails: LancersJobDetail[] = [];
@@ -46,7 +49,7 @@ async function main(): Promise<void> {
         console.log('🔍 各カテゴリから案件を取得します...');
 
         for (const category of categories) {
-            console.log(`\n📁 カテゴリ「${category.name}」の処理を開始（最大${category.maxJobs}件）`);
+            console.log(`\n📁 カテゴリ「${category.name}」の処理を開始（最大${itemsPerCategory}件）`);
 
             try {
                 // カテゴリURLマッピング（新着順パラメータ付き）
@@ -85,13 +88,13 @@ async function main(): Promise<void> {
                 }
 
                 // 案件一覧を取得
-                const jobs = await getJobsFromPage(page, category.maxJobs, category.name);
+                const jobs = await getJobsFromPage(page, itemsPerCategory, category.name);
                 console.log(`📊 ${category.name}カテゴリ: ${jobs.length}件の案件を取得`);
 
                 allJobs.push(...jobs);
 
-                // 詳細情報を取得（最大20件まで）
-                const detailsToFetch = jobs.slice(0, 20);
+                // 詳細情報を取得（最大10件まで）
+                const detailsToFetch = jobs.slice(0, detailsLimit);
                 for (const job of detailsToFetch) {
                     try {
                         console.log(`🔍 詳細取得: ${job.title}`);
@@ -257,7 +260,7 @@ async function extractJobFromElement(element: any, category: string): Promise<La
 }
 
 /**
- * 案件詳細情報を取得
+ * 案件詳細情報を取得（修正されたスクレイピングロジック使用）
  */
 async function getJobDetail(page: any, jobUrl: string): Promise<LancersJobDetail | null> {
     try {
@@ -266,14 +269,78 @@ async function getJobDetail(page: any, jobUrl: string): Promise<LancersJobDetail
 
         const jobId = jobUrl.match(/\/work\/detail\/(\d+)/)?.[1] || '';
 
-        // 詳細情報を抽出
+        // ページが削除されているかチェック
+        const errorCheck = await page.evaluate(() => {
+            const banner = document.querySelector('banner h1[level="1"]');
+            if (banner) {
+                const text = banner.textContent || '';
+                if (text.includes('閲覧制限') || text.includes('削除')) {
+                    return { error: true, message: text };
+                }
+            }
+            return { error: false };
+        });
+
+        if (errorCheck.error) {
+            console.log(`⚠️ ページアクセスエラー: ${jobId}`);
+            return null;
+        }
+
+        // 修正されたスクレイピングロジックを使用して詳細情報を抽出
+        const detailInfo = await page.evaluate(() => {
+            // タイトルの取得（テストで成功した手法を使用）
+            const title = (() => {
+                const h1 = document.querySelector('h1');
+                if (!h1) return '';
+
+                // "【急募】オンライン子供向けプログラミングレッスン講師を募集！の仕事 [IT・通信・インターネット]"
+                // から "【急募】オンライン子供向けプログラミングレッスン講師を募集！" を抽出
+                const fullText = h1.textContent || '';
+                const match = fullText.match(/^(.+?)の仕事/);
+                return match ? match[1]!.trim() : fullText.replace(/\s*\[.*?\]\s*$/, '').trim();
+            })();
+
+            // 予算の取得（定義リストからの抽出）
+            const budget = (() => {
+                const terms = Array.from(document.querySelectorAll('dt'));
+                for (const term of terms) {
+                    if (term.textContent?.includes('提示した予算') || term.textContent?.includes('予算')) {
+                        const dd = term.nextElementSibling;
+                        if (dd && dd.tagName === 'DD') {
+                            return dd.textContent?.trim() || '';
+                        }
+                    }
+                }
+                return '';
+            })();
+
+            // 詳細説明の取得（定義リストからの抽出）
+            const detailedDescription = (() => {
+                const terms = Array.from(document.querySelectorAll('dt'));
+                for (const term of terms) {
+                    if (term.textContent?.includes('依頼概要')) {
+                        const dd = term.nextElementSibling;
+                        if (dd && dd.tagName === 'DD') {
+                            const text = dd.textContent?.trim() || '';
+                            // 最初の500文字に制限（詳細版なので少し長めに）
+                            return text.length > 500 ? text.substring(0, 500) + '...' : text;
+                        }
+                    }
+                }
+                return '';
+            })();
+
+            return { title, budget, detailedDescription };
+        });
+
+        // 詳細情報を構築
         const detail: LancersJobDetail = {
             jobId: jobId,
-            title: '',
+            title: detailInfo.title,
             category: '',
             url: jobUrl,
             paymentType: '',
-            budget: '',
+            budget: detailInfo.budget,
             deliveryDate: '',
             postDate: '',
             applicationDeadline: '',
@@ -281,7 +348,7 @@ async function getJobDetail(page: any, jobUrl: string): Promise<LancersJobDetail
             contractCount: 0,
             recruitmentCount: 0,
             favoriteCount: 0,
-            detailedDescription: '',
+            detailedDescription: detailInfo.detailedDescription,
             client: {
                 name: '',
                 url: '',
@@ -294,38 +361,6 @@ async function getJobDetail(page: any, jobUrl: string): Promise<LancersJobDetail
             recentApplicants: [],
             scrapedAt: new Date().toISOString()
         };
-
-        // 詳細説明
-        const descriptionElement = await page.$('.job-description, .work-content, .description-content');
-        if (descriptionElement) {
-            detail.detailedDescription = await descriptionElement.textContent() || '';
-        }
-
-        // 予算
-        const budgetElement = await page.$('.budget, .price-info, .work-budget');
-        if (budgetElement) {
-            detail.budget = await budgetElement.textContent() || '';
-        }
-
-        // 締切
-        const deadlineElement = await page.$('.deadline, .work-deadline, .due-date');
-        if (deadlineElement) {
-            detail.applicationDeadline = await deadlineElement.textContent() || '';
-        }
-
-        // クライアント評価
-        const ratingElement = await page.$('.rating, .client-rating, .evaluation-score');
-        if (ratingElement) {
-            const ratingText = await ratingElement.textContent();
-            detail.client.overallRating = ratingText || '';
-        }
-
-        // クライアント発注数
-        const orderCountElement = await page.$('.order-count, .client-orders, .work-count');
-        if (orderCountElement) {
-            const orderText = await orderCountElement.textContent();
-            detail.client.orderHistory = orderText || '';
-        }
 
         return detail;
 

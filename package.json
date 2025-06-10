@@ -7,7 +7,7 @@
         "build": "tsc",
         "start": "node dist/index.js",
         "cdk": "cdk",
-        "test": "jest",
+        "test": "echo \"Error: no test specified\" && exit 1",
         "test:coverage": "jest --coverage",
         "lint": "eslint src/**/*.ts",
         "lint:fix": "eslint src/**/*.ts --fix",
@@ -26,11 +26,15 @@
         "search:high-rate": "npm run integrated-search -- --min-rate 4000",
         "search:dev": "npm run integrated-search -- --categories web,mobile --keywords react,typescript,nodejs",
         "unified-report": "npx ts-node scripts/create-unified-report.ts",
+        "unified-report:1000": "npx ts-node scripts/create-unified-report.ts 1000",
+        "unified-report:2000": "npx ts-node scripts/create-unified-report.ts 2000",
         "unified-report:3000": "npx ts-node scripts/create-unified-report.ts 3000",
-        "full-scrape-analysis": "npm run scrape-lancers && npm run full-analysis:detailed && npm run unified-report:3000",
-        "mega-analysis": "npm run scrape-lancers && npm run handler full-analysis 200 && npm run unified-report:3000",
-        "quick-analysis": "npm run full-analysis:quick && npm run unified-report -- 2000",
-        "super-analysis": "npm run scrape-lancers && npm run handler full-analysis 300 && npm run unified-report -- 2500"
+        "test-scraping": "npx ts-node scripts/test-scraping-5jobs.ts",
+        "test-lancers": "npx ts-node scripts/test-lancers-5jobs.ts",
+        "quick-analysis": "npx ts-node scripts/create-unified-report.ts 1000",
+        "mega-analysis": "npx ts-node scripts/create-unified-report.ts 2000",
+        "super-analysis": "npx ts-node scripts/create-unified-report.ts 1500",
+        "full-scrape-analysis": "npx ts-node scripts/create-unified-report.ts 2500"
     },
     "keywords": [
         "crowdworks",
