@@ -18,110 +18,55 @@ interface HighHourlyJob extends AnalysisResult {
     original_title?: string;
 }
 
-// 時給文字列を数値に変換する関数
-function parseHourlyRate(hourlyRateString: string): number {
-    if (!hourlyRateString || hourlyRateString.trim() === '' || hourlyRateString === '0円') {
-        return 0;
-    }
-
-    const match = hourlyRateString.match(/([0-9,]+)/);
-    if (match && match[1]) {
-        const numericString = match[1].replace(/,/g, '');
-        return parseInt(numericString, 10);
-    }
-
-    return 0;
-}
-
-// 詳細データから元のタイトルを取得する関数
-function getOriginalJobData(jobId: string, detailsData: any[]): any {
-    return detailsData.find(job => job.jobId === jobId);
-}
-
 // メイン処理
 function extractHighHourlyJobs(): void {
-    console.log('🔄 時給3000円以上の案件抽出を開始...');
+    console.log('🔄 時給2000円以上かつ工数20時間以下のWebエンジニア向け案件抽出を開始...');
 
     const highHourlyJobs: HighHourlyJob[] = [];
-    const minHourlyRate = 3000;
+    const minHourlyRate = 2000;
+    const maxWorkHours = 20;
 
-    // 詳細データも読み込む（元のタイトル取得用）
-    let ecDetailsData: any[] = [];
-    let webDetailsData: any[] = [];
+    // カテゴリ定義（webエンジニア向け）
+    const WEB_ENGINEER_CATEGORIES = [
+        { key: 'web_products', label: 'Web製品' },
+        { key: 'software_development', label: 'ソフトウェア開発' },
+        { key: 'development', label: '開発' }
+    ] as const;
 
-    // EC詳細データの読み込み
-    try {
-        ecDetailsData = JSON.parse(readFileSync('output/details-ec.json', 'utf8'));
-        console.log(`📂 EC詳細データ: ${ecDetailsData.length}件読み込み`);
-    } catch (error) {
-        console.log(`⚠️ EC詳細データの読み込みに失敗: ${error}`);
-    }
-
-    // Web製品詳細データの読み込み
-    try {
-        webDetailsData = JSON.parse(readFileSync('output/details-web_products.json', 'utf8'));
-        console.log(`📂 Web製品詳細データ: ${webDetailsData.length}件読み込み`);
-    } catch (error) {
-        console.log(`⚠️ Web製品詳細データの読み込みに失敗: ${error}`);
-    }
-
-    // AI分析済みデータの読み込み（オプション）
-    let ecAnalyzedData: any[] = [];
-    let webAnalyzedData: any[] = [];
-
-    try {
-        ecAnalyzedData = JSON.parse(readFileSync('output/analyzed-ec.json', 'utf8'));
-        console.log(`🧠 EC AI分析データ: ${ecAnalyzedData.length}件読み込み`);
-    } catch (error) {
-        console.log(`⚠️ ECカテゴリファイルが見つかりません: analyzed-ec.json`);
-    }
-
-    try {
-        webAnalyzedData = JSON.parse(readFileSync('output/analyzed-web_products.json', 'utf8'));
-        console.log(`🧠 Web製品 AI分析データ: ${webAnalyzedData.length}件読み込み`);
-    } catch (error) {
-        console.log(`⚠️ Web製品カテゴリファイルが見つかりません: analyzed-web_products.json`);
-    }
-
-    // ECカテゴリの分析データ読み込み
-    try {
-        ecAnalyzedData.forEach(item => {
+    WEB_ENGINEER_CATEGORIES.forEach(({ key, label }) => {
+        let detailsData: AnalysisResult[] = [];
+        let analyzedData: AnalysisResult[] = [];
+        // 詳細データの読み込み
+        try {
+            detailsData = JSON.parse(readFileSync(`output/details-${key}.json`, 'utf8'));
+            console.log(`📂 ${label}詳細データ: ${detailsData.length}件読み込み`);
+        } catch (error) {
+            console.log(`⚠️ ${label}詳細データの読み込みに失敗: ${error}`);
+        }
+        // AI分析済みデータの読み込み
+        try {
+            analyzedData = JSON.parse(readFileSync(`output/analyzed-${key}.json`, 'utf8'));
+            console.log(`🧠 ${label}AI分析データ: ${analyzedData.length}件読み込み`);
+        } catch (error) {
+            console.log(`⚠️ ${label}AI分析データの読み込みに失敗: ${error}`);
+        }
+        // 抽出処理
+        analyzedData.forEach((item: AnalysisResult) => {
             const hourlyRate = parseHourlyRate(item.想定時給);
-            if (hourlyRate >= minHourlyRate) {
-                const originalJob = getOriginalJobData(item.jobId, ecDetailsData);
+            const workHours = parseWorkHours(item.工数_見積もり);
+            if (hourlyRate >= minHourlyRate && workHours > 0 && workHours <= maxWorkHours) {
+                const originalJob = getOriginalJobData(item.jobId, detailsData);
                 highHourlyJobs.push({
                     ...item,
-                    category: 'EC',
+                    category: label,
                     hourly_rate_numeric: hourlyRate,
                     link: `https://crowdworks.jp/public/jobs/${item.jobId}`,
                     original_title: originalJob?.title || item.title
                 });
             }
         });
-        console.log(`✅ ECカテゴリ: ${ecAnalyzedData.length}件中 ${ecAnalyzedData.filter(item => parseHourlyRate(item.想定時給) >= minHourlyRate).length}件が対象`);
-    } catch (e) {
-        console.log('⚠️ ECカテゴリファイルが見つかりません: analyzed-ec.json');
-    }
-
-    // Web製品カテゴリの分析データ読み込み
-    try {
-        webAnalyzedData.forEach(item => {
-            const hourlyRate = parseHourlyRate(item.想定時給);
-            if (hourlyRate >= minHourlyRate) {
-                const originalJob = getOriginalJobData(item.jobId, webDetailsData);
-                highHourlyJobs.push({
-                    ...item,
-                    category: 'Web製品',
-                    hourly_rate_numeric: hourlyRate,
-                    link: `https://crowdworks.jp/public/jobs/${item.jobId}`,
-                    original_title: originalJob?.title || item.title
-                });
-            }
-        });
-        console.log(`✅ Web製品カテゴリ: ${webAnalyzedData.length}件中 ${webAnalyzedData.filter(item => parseHourlyRate(item.想定時給) >= minHourlyRate).length}件が対象`);
-    } catch (e) {
-        console.log('⚠️ Web製品カテゴリファイルが見つかりません: analyzed-web_products.json');
-    }
+        console.log(`✅ ${label}: ${analyzedData.length}件中 ${analyzedData.filter(item => parseHourlyRate(item.想定時給) >= minHourlyRate && parseWorkHours(item.工数_見積もり) > 0 && parseWorkHours(item.工数_見積もり) <= maxWorkHours).length}件が対象`);
+    });
 
     if (highHourlyJobs.length === 0) {
         console.error('❌ 対象案件が見つかりませんでした');
@@ -133,7 +78,7 @@ function extractHighHourlyJobs(): void {
 
     // Markdownファイル生成
     const markdown = generateMarkdown(sortedJobs, minHourlyRate);
-    const outputFileName = `output/high-hourly-jobs-3000+.md`;
+    const outputFileName = `output/high-hourly-jobs-web-engineer-2000+.md`;
 
     writeFileSync(outputFileName, markdown, 'utf8');
     console.log(`💾 Markdownファイルを保存: ${outputFileName}`);
@@ -180,6 +125,36 @@ function generateMarkdown(jobs: HighHourlyJob[], minRate: number): string {
     markdown += `- 案件の募集状況は変動するため、リンク先で最新情報をご確認ください\n`;
 
     return markdown;
+}
+
+// 時給文字列を数値に変換する関数
+function parseHourlyRate(hourlyRateString: string): number {
+    if (!hourlyRateString || hourlyRateString.trim() === '' || hourlyRateString === '0円') {
+        return 0;
+    }
+
+    const match = hourlyRateString.match(/([0-9,]+)/);
+    if (match && match[1]) {
+        const numericString = match[1].replace(/,/g, '');
+        return parseInt(numericString, 10);
+    }
+
+    return 0;
+}
+
+// 工数文字列から時間数を抽出する関数
+function parseWorkHours(workHoursString: string): number {
+    if (!workHoursString) return 0;
+    const match = workHoursString.match(/([0-9]+)\s*時間/);
+    if (match && match[1]) {
+        return parseInt(match[1], 10);
+    }
+    return 0;
+}
+
+// 詳細データから元のタイトルを取得する関数
+function getOriginalJobData(jobId: string, detailsData: any[]): any {
+    return detailsData.find(job => job.jobId === jobId);
 }
 
 // 実行

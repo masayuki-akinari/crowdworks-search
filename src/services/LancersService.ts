@@ -77,7 +77,7 @@ export class LancersService {
             this._isLoggedIn = true;
             console.log('✅ ランサーズログイン成功');
             return true;
-            
+
         } catch (error) {
             console.error('❌ ランサーズログインエラー:', error);
             this._isLoggedIn = false;
@@ -128,12 +128,12 @@ export class LancersService {
                         
                         // NEW, 初回, 2回目などのラベルを除去
                         title = title.replace(/^(NEW|初回|\d+回目)\s*/, '').trim();
-                        
+
                         if (!title || title.length < 5) return;
-                        
+
                         // 完全なURLを構築
                         const fullUrl = href.startsWith('http') ? href : `https://www.lancers.jp${href}`;
-                        
+
                         // 親要素から価格情報を取得
                         let budget = '';
                         let parentElement = link.parentElement;
@@ -149,7 +149,7 @@ export class LancersService {
                         }
                         
                         // 説明文を取得
-                        let description = '';
+                    let description = '';
                         parentElement = link.parentElement;
                         while (parentElement && !description) {
                             const textNodes = Array.from(parentElement.childNodes)
@@ -183,12 +183,12 @@ export class LancersService {
                         console.log(`案件${count + 1}: ${title}`);
                         jobs.push(job);
                         count++;
-                        
-                    } catch (error) {
+
+                } catch (error) {
                         console.log(`案件解析エラー (${index}):`, error);
-                    }
-                });
-                
+                }
+            });
+
                 console.log(`最終的に取得された案件数: ${jobs.length}`);
                 return jobs;
                 
@@ -209,22 +209,22 @@ export class LancersService {
     async scrapeJobDetail(url: string): Promise<LancersJobDetail | null> {
         try {
             console.log(`📋 詳細取得中: ${url}`);
-            
+
             await this.page.goto(url, { waitUntil: 'networkidle', timeout: 30000 });
-            
+
             const detail = await this.page.evaluate(() => {
                 const getTextContent = (selector: string): string => {
                     const element = document.querySelector(selector);
                     return element?.textContent?.trim() || '';
                 };
-                
+
                 // タイトル取得
                 const title = getTextContent('h1') || document.title;
-                
+
                 // 詳細説明取得
                 const detailedDescription = getTextContent('.work-detail-description, .description, .content') ||
                                           document.body.textContent?.substring(0, 1000) || '';
-                
+
                 return {
                     title: title,
                     url: window.location.href,
@@ -247,9 +247,9 @@ export class LancersService {
                     }
                 };
             });
-            
+
             return detail;
-            
+
         } catch (error) {
             console.error(`詳細取得エラー: ${url}`, error);
             return null;

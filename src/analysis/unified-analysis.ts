@@ -16,7 +16,6 @@ async function main() {
   // クラウドワークスデータ読み込み
   const cwFiles = ['details-ec.json', 'details-web_products.json', 'details-software_development.json'];
   let cwJobs = 0;
-  let cwTotalBudget = 0;
   
   for (const file of cwFiles) {
     const filepath = path.join(outputDir, file);
@@ -91,25 +90,4 @@ if (require.main === module) {
   main();
 }
 
-/**
- * 予算額を数値で抽出
- */
-private extractBudgetAmount(budget: string): number {
-  if (!budget) return 0;
-  
-  // 「～」や「-」で区切られた範囲の場合は上限値を取得
-  const rangeMatch = budget.match(/([0-9,]+)\s*円\s*[～~-]\s*([0-9,]+)\s*円/);
-  if (rangeMatch && rangeMatch[1] && rangeMatch[2]) {
-    const min = parseInt(rangeMatch[1].replace(/,/g, '')) || 0;
-    const max = parseInt(rangeMatch[2].replace(/,/g, '')) || 0;
-    return Math.max(min, max); // 上限値を返す
-  }
-  
-  // 単一の金額
-  const singleMatch = budget.match(/([0-9,]+)\s*円/);
-  if (singleMatch && singleMatch[1]) {
-    return parseInt(singleMatch[1].replace(/,/g, '')) || 0;
-  }
-  
-  return 0;
-} 
+ 

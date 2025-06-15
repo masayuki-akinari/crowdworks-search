@@ -18,6 +18,7 @@ interface AnalysisResult {
     工数_見積もり: string;
     想定時給: string;
     難易度: string;
+    簡易設計: string;
     gpt_summary: string;
 }
 
@@ -120,7 +121,8 @@ async function analyzeDetail(detail: CrowdWorksJobDetail): Promise<AnalysisResul
 1. この仕事にかかるおおよその工数（何時間くらいか）
 2. 想定される時給（日本円・固定値で1つの数値のみ）
 3. 案件の難易度（簡単/普通/難しい のいずれか）
-4. その根拠や注意点
+4. 簡易的な設計・アプローチ（どのような手順・技術で進めるか）
+5. その根拠や注意点
 を日本語で簡潔にまとめてください。
 
 【重要な工数見積もりのポイント】
@@ -159,6 +161,7 @@ async function analyzeDetail(detail: CrowdWorksJobDetail): Promise<AnalysisResul
 工数: <例: 8時間>
 時給: <例: 2500円>
 難易度: <例: 普通>
+設計: <例: React+TypeScriptでSPA構築、API連携、レスポンシブ対応>
 要約: <根拠や注意点を1-2文で>`;
 
     return limiter.execute(async () => {
@@ -177,6 +180,7 @@ async function analyzeDetail(detail: CrowdWorksJobDetail): Promise<AnalysisResul
         const 工数 = text.match(/工数[:：]\s*(.+)/)?.[1]?.trim() || '';
         const 時給 = text.match(/時給[:：]\s*(.+)/)?.[1]?.trim() || '';
         const 難易度 = text.match(/難易度[:：]\s*(.+)/)?.[1]?.trim() || '';
+        const 設計 = text.match(/設計[:：]\s*(.+)/)?.[1]?.trim() || '';
         const 要約 = text.match(/要約[:：]\s*([\s\S]*)/)?.[1]?.trim() || text;
 
         return {
@@ -185,6 +189,7 @@ async function analyzeDetail(detail: CrowdWorksJobDetail): Promise<AnalysisResul
             工数_見積もり: 工数,
             想定時給: 時給,
             難易度: 難易度,
+            簡易設計: 設計,
             gpt_summary: 要約,
         };
     });
